@@ -1,0 +1,310 @@
+x-common-env: &common-env
+  PUID: 1000
+  PGID: 1000
+  TZ: Asia/Kolkata
+
+services:
+
+  # --------------------------------------------------
+  # REVERSE PROXY & CONTAINER MANAGEMENT
+  # --------------------------------------------------
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    ports:
+      - "80:80"      # Public HTTP
+      - "81:81"      # Admin Web UI
+      - "443:443"    # Public HTTPS / SSL
+    volumes:
+      - ~/home-lab/configs/npm/data:/data
+      - ~/home-lab/configs/npm/letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+      - 8000:8000
+      - 9443:9443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/home-lab/configs/portainer/data:/data
+    restart: unless-stopped
+
+  # --------------------------------------------------
+  # SECURITY & PASSWORDS
+  # --------------------------------------------------
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    environment:
+      DOMAIN: ${VAULTWARDEN_DOMAIN:?Set VAULTWARDEN_DOMAIN in .env}
+      SIGNUPS_ALLOWED: ${VAULTWARDEN_SIGNUPS_ALLOWED:?Set VAULTWARDEN_SIGNUPS_ALLOWED in .env}
+      TZ: Asia/Kolkata
+    volumes:
+      - ~/home-lab/configs/vaultwarden/data:/data
+    restart: unless-stopped
+
+  # --------------------------------------------------
+  # PHOTOS & BACKUPS (IMMICH)
+  # --------------------------------------------------
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    container_name: immich-server
+    ports:
+      - 2283:2283
+    environment:
+      DB_HOSTNAME: immich-database
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD:?Set IMMICH_DB_PASSWORD in .env}
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: immich-redis
+      TZ: Asia/Kolkata
+    volumes:
+      - ~/home-lab/configs/immich/upload:/usr/src/app/upload
+    depends_on:
+      - immich-database
+      - immich-redis
+    restart: unless-stopped
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: immich-machine-learning
+    volumes:
+      - ~/home-lab/configs/immich/model-cache:/cache
+    restart: unless-stopped
+
+  immich-redis:
+    image: redis:7-alpine
+    container_name: immich-redis
+    restart: unless-stopped
+
+  immich-database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: immich-database
+    environment:
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD:?Set IMMICH_DB_PASSWORD in .env}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: immich
+    volumes:
+      - ~/home-lab/configs/immich/postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # --------------------------------------------------
+  # DOCUMENT MANAGEMENT & UTILITIES
+  # --------------------------------------------------
+  paperless-ngx:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: paperless-ngx
+    environment:
+      <<: *common-env
+      PAPERLESS_REDIS: redis://paperless-redis:6379
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:-changeme12345}
+      # PAPERLESS_URL: ${PAPERLESS_URL:-http://localhost:8000}
+      PAPERLESS_URL: https://paperless.akshathome.duckdns.org
+      PAPERLESS_CSRF_TRUSTED_ORIGINS: https://paperless.akshathome.duckdns.org
+      PAPERLESS_ALLOWED_HOSTS: paperless.akshathome.duckdns.org
+      PAPERLESS_TIME_ZONE: Asia/Kolkata
+      PAPERLESS_OCR_LANGUAGE: eng
+    volumes:
+      - ~/home-lab/configs/paperless/data:/usr/src/paperless/data
+      - ~/home-lab/configs/paperless/media:/usr/src/paperless/media
+      - ~/home-lab/configs/paperless/export:/usr/src/paperless/export
+      - ~/home-lab/configs/paperless/consume:/usr/src/paperless/consume
+    ports:
+      - 8777:8000
+    depends_on:
+      - paperless-redis
+    restart: unless-stopped
+
+  paperless-redis:
+    image: redis:7-alpine
+    container_name: paperless-redis
+    restart: unless-stopped
+
+  stirling-pdf:
+    image: frooodle/s-pdf:latest
+    container_name: stirling-pdf
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - TZ=Asia/Kolkata
+    ports:
+      - 8085:8080
+    volumes:
+      - ~/home-lab/configs/stirling-pdf/trainingData:/usr/share/tessdata
+      - ~/home-lab/configs/stirling-pdf/extraConfigs:/configs
+    restart: unless-stopped
+
+  # --------------------------------------------------
+  # FILE SYNC & KNOWLEDGE BASE
+  # --------------------------------------------------
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    hostname: homeserver-syncthing
+    environment:
+      <<: *common-env
+    volumes:
+      - ~/home-lab/configs/syncthing/config:/config
+      - ~/home-lab/configs/syncthing/sync:/sync
+    ports:
+      - 8384:8384     # Web UI
+      - 22000:22000/tcp # Listening port TCP
+      - 22000:22000/udp # Listening port UDP
+      - 21027:21027/udp # Discovery port
+    restart: unless-stopped
+
+  # --------------------------------------------------
+  # PERSONAL FINANCE & BUDGETING
+  # --------------------------------------------------
+  actual-budget:
+    image: actualbudget/actual-server:latest
+    container_name: actual-budget
+    environment:
+      - TZ=Asia/Kolkata
+    volumes:
+      - ~/home-lab/configs/actual-budget/user-files:/data
+    ports:
+      - 5006:5006
+    restart: unless-stopped
+
+  # --------------------------------------------------
+  # MONITORING & HOMEPAGE
+  # --------------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma
+    volumes:
+      - ~/home-lab/configs/uptime-kuma/data:/app/data
+    ports:
+      - 3001:3001
+    restart: unless-stopped
+
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    environment:
+      - TZ=Asia/Kolkata
+    volumes:
+      - ~/home-lab/configs/homepage/config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+
+  # --------------------------------------------------
+  # MEDIA STREAMING & AUTOMATION (JELLYFIN & *ARR STACK)
+  # --------------------------------------------------
+  # ZFS Snapshot & Storage Architecture:
+  # 1. Configs & Databases:
+  #    ~/home-lab/configs/<service> -> ZFS config dataset.
+  #    Snapshots are lightweight (MBs/GBs), fast, and safely replicated offsite.
+  # 2. Bulk Media & Downloads:
+  #    ${MEDIA_DIR:-~/media} -> Separate ZFS media dataset.
+  #    EXCLUDED from routine config backup snapshots.
+  # 3. Jellyfin Cache & Transcode Isolation:
+  #    ${MEDIA_DIR:-~/media}/cache/jellyfin:/cache
+  #    Keeps multi-GB transcode chunks OUT of ~/home-lab/configs/jellyfin so snapshots don't bloat.
+  # 4. TRaSH Guides Hardlink Structure:
+  #    Single shared root (${MEDIA_DIR:-~/media}:/data) across qBittorrent, Sonarr, and Radarr
+  #    enables instant, zero-space atomic hardlinks from downloads to library folders.
+  # --------------------------------------------------
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      LOG_LEVEL: info
+      TZ: Asia/Kolkata
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      <<: *common-env
+      WEBUI_PORT: 8080
+    volumes:
+      - ~/home-lab/configs/qbittorrent:/config
+      - ${MEDIA_DIR:-~/media}:/data
+    ports:
+      - "8080:8080" # WebUI
+      - 6881:6881
+      - 6881:6881/udp
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      <<: *common-env
+    volumes:
+      - ~/home-lab/configs/prowlarr:/config
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      <<: *common-env
+    volumes:
+      - ~/home-lab/configs/sonarr:/config
+      - ${MEDIA_DIR:-~/media}:/data
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      <<: *common-env
+    volumes:
+      - ~/home-lab/configs/radarr:/config
+      - ${MEDIA_DIR:-~/media}:/data
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      <<: *common-env
+    volumes:
+      - ~/home-lab/configs/bazarr:/config
+      - ${MEDIA_DIR:-~/media}:/data
+    ports:
+      - "6767:6767"
+    restart: unless-stopped
+
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      <<: *common-env
+    volumes:
+      - ~/home-lab/configs/jellyfin:/config
+      - ${MEDIA_DIR:-~/media}/cache/jellyfin:/cache
+      - ${MEDIA_DIR:-~/media}/movies:/data/movies:ro
+      - ${MEDIA_DIR:-~/media}/tv:/data/tv:ro
+    ports:
+      - "8096:8096"
+    # devices:
+    #   - /dev/dri:/dev/dri # Intel QuickSync / VAAPI hardware transcoding
+    restart: unless-stopped
+
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      TZ: Asia/Kolkata
+    volumes:
+      - ~/home-lab/configs/jellyseerr:/app/config
+    ports:
+      - "5055:5055"
+    restart: unless-stopped
