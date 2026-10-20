@@ -1,6 +1,6 @@
-﻿# 🏠 Automated Homelab & Media Server
+# 🏠 Automated Homelab & Media Server
 
-A complete, production-grade homelab infrastructure managed entirely via Docker Compose. Engineered around **ZFS snapshot efficiency**, **zero-copy atomic hardlinks (TRaSH Guides)**, **secure SSL reverse proxying**, and **isolated DNS/VPN infrastructure**.
+A complete, production-grade homelab infrastructure managed via Docker Compose and native Linux services. Engineered around **ZFS snapshot efficiency**, **zero-copy atomic hardlinks (TRaSH Guides)**, **secure SSL reverse proxying without open router ports**, **native SMB network storage & Syncthing offline drive**, and **isolated DNS/VPN infrastructure**.
 
 ---
 
@@ -9,26 +9,26 @@ A complete, production-grade homelab infrastructure managed entirely via Docker 
 ```mermaid
 flowchart TD
     subgraph Internet ["External & Remote Access"]
-        Client["Mobile / Remote Client"]
-        DuckDNS["DuckDNS Dynamic DNS"]
+        Client["Mobile / Remote Client (on 5G)"]
+        DuckDNS["DuckDNS (Resolves to Private LAN IP)"]
         TailscaleNet["Tailscale Mesh Network"]
     end
 
     subgraph Hardware_Pi ["Standalone Hardware (Raspberry Pi)"]
         PiHole["Pi-hole (Ad-blocking DNS)"]
-        PiTailscale["Subnet Router (192.168.0.0/24)"]
+        PiTailscale["Tailscale Subnet Router (LAN Bridge)"]
     end
 
-    subgraph HomeServer ["Main Home Server (Docker Host)"]
+    subgraph HomeServer ["Main Home Server (Ubuntu Docker Host - No Open Router Ports)"]
         NPM["Nginx Proxy Manager (:80, :443, :81)"]
         Portainer["Portainer CE (:8000, :9443)"]
+        SMB["Native Samba Server (:445)"]
 
-        subgraph Core_Services ["Security, Photos & Productivity"]
+        subgraph Core_Services ["Security, Photos & Documents"]
             Vault["Vaultwarden"]
             Immich["Immich (Server + ML + PGVector)"]
             Paperless["Paperless-ngx + Stirling-PDF"]
-            Sync["Syncthing"]
-            Budget["Actual Budget"]
+            Sync["Syncthing (:8384)"]
             Monitor["Uptime Kuma + Homepage"]
         end
 
@@ -44,19 +44,24 @@ flowchart TD
         end
     end
 
-    subgraph Storage ["ZFS Storage Pool"]
-        DS_Appdata["pool/appdata (~/home-lab/configs)\n* Hourly/Daily Snapshots * Backup Replicated"]
-        DS_Media["pool/media (~/media)\n* Excluded from backup snapshots * Instant Hardlinks"]
+    subgraph Storage ["ZFS Storage Pool (tank)"]
+        DS_Appdata["tank/appdata (./configs)\n* DBs & Configs * Hourly Snapshots * Replicated Offsite"]
+        DS_Photos["tank/photos (~/photos)\n* Immich Photos & Videos * Daily Snapshots * Replicated Offsite"]
+        DS_Storage["tank/storage (~/storage)\n* SMB & Syncthing Drive * Daily Snapshots * Replicated Offsite"]
+        DS_Media["tank/media (~/media)\n* Movies, TV, Downloads, Cache * Excluded from Backup Snapshots"]
     end
 
     Client -->|Tailscale Split-Tunnel| PiTailscale
     PiTailscale -->|Local LAN| HomeServer
     Client -->|Encrypted DNS| PiHole
-    DuckDNS -->|Wildcard SSL| NPM
+    DuckDNS -->|DNS-01 Challenge for Wildcard SSL| NPM
 
     NPM --> Core_Services
     NPM --> Media_Stack
 
+    SMB --> DS_Storage
+    Sync --> DS_Storage
+    Immich --> DS_Photos
     Core_Services --> DS_Appdata
     Media_Stack --> DS_Appdata
     Media_Stack --> DS_Media
@@ -66,16 +71,16 @@ flowchart TD
 
 ## 🗂️ Services Directory
 
-| Category | Service | Container Port | Host Port | Web UI URL | Purpose |
+| Category | Service | Container Port | Host Port | Access URL | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Proxy & Admin** | [Nginx Proxy Manager](https://nginxproxymanager.com) | `80`, `443`, `81` | `80:80`, `443:443`, `81:81` | `http://<ip>:81` | SSL termination & reverse proxy |
 | | [Portainer CE](https://www.portainer.io) | `8000`, `9443` | `8000:8000`, `9443:9443` | `https://<ip>:9443` | Docker container management GUI |
+| **Storage & Drive** | [Samba (Native SMB)](https://www.samba.org) | Host Native | `445`, `139` | `smb://<server-ip>/HomeDrive` | Personal cloud & Google Drive replacement |
+| | [Syncthing](https://syncthing.net) | `8384` | `8384:8384` | `http://<ip>:8384` | Continuous file sync & offline drive |
 | **Security** | [Vaultwarden](https://github.com/dani-garcia/vaultwarden) | `80` | Via NPM | `https://vault.<domain>` | Self-hosted Bitwarden password vault |
 | **Photos & Documents** | [Immich](https://immich.app) | `2283` | `2283:2283` | `http://<ip>:2283` | Self-hosted Google Photos alternative |
 | | [Paperless-ngx](https://docs.paperless-ngx.com) | `8000` | `8777:8000` | `http://<ip>:8777` | Document archival & OCR system |
 | | [Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF) | `8080` | `8085:8080` | `http://<ip>:8085` | Local PDF manipulation swiss-army knife |
-| **Sync & Finance** | [Syncthing](https://syncthing.net) | `8384` | `8384:8384` | `http://<ip>:8384` | Decentralized continuous file sync |
-| | [Actual Budget](https://actualbudget.org) | `5006` | `5006:5006` | `http://<ip>:5006` | Local-first personal finance & budgeting |
 | **Monitoring** | [Uptime Kuma](https://github.com/louislam/uptime-kuma) | `3001` | `3001:3001` | `http://<ip>:3001` | Service uptime & status page |
 | | [Homepage](https://gethomepage.dev) | `3000` | `3000:3000` | `http://<ip>:3000` | Application dashboard |
 | **Media Automation** | [Jellyfin](https://jellyfin.org) | `8096` | `8096:8096` | `http://<ip>:8096` | Open-source media streaming server |
@@ -89,117 +94,187 @@ flowchart TD
 
 ---
 
-## 💾 Storage Architecture & ZFS Snapshot Design
+## 💾 Storage Architecture & ZFS Dataset Layout
 
-The core storage layout strictly separates **lightweight critical application state** from **heavy disposable media**:
+The storage layout strictly separates **lightweight critical application state**, **personal photos**, **personal cloud documents**, and **disposable media**:
 
 ```
-ZFS Storage Pool (tank or pool)
-├── tank/appdata (Mounted to ~/home-lab/configs)
-│   ├── actual-budget/
-│   ├── bazarr/
-│   ├── homepage/
-│   ├── immich/          (postgres DB + vector data + upload configs)
-│   ├── jellyfin/        (ONLY database, settings, and watch history)
-│   ├── jellyseerr/
-│   ├── npm/             (Nginx Proxy Manager DB & SSL certificates)
-│   ├── paperless/       (data & export)
-│   ├── portainer/
-│   ├── prowlarr/
-│   ├── qbittorrent/     (qBittorrent.conf & .fastresume state)
-│   ├── radarr/
-│   ├── sonarr/
-│   ├── syncthing/
-│   ├── uptime-kuma/
-│   └── vaultwarden/     (SQLite DB + encrypted vault data)
-│   └──> SNAPSHOT THIS! (Lightweight, fast, replicated offsite)
+ZFS Storage Pool (tank)
+├── tank/appdata (Mounted to ./configs inside ~/home-lab)
+│   ├── Settings, SQLite databases (Vaultwarden, Sonarr, Radarr, Prowlarr)
+│   ├── Immich PostgreSQL database & pgvector data
+│   ├── Paperless SQLite metadata & NPM certificates
+│   └──> SNAPSHOT THIS! (Lightweight, ~5-20 GB, hourly snapshots, replicated offsite)
+│
+├── tank/photos (Mounted to ~/photos)
+│   ├── Immich photo and video libraries (family memories)
+│   └──> SNAPSHOT & BACKUP THIS! (Daily snapshots, replicated offsite)
+│
+├── tank/storage (Mounted to ~/storage)
+│   ├── Native Samba SMB share (Live network drive)
+│   ├── Syncthing storage folder (Offline laptop sync)
+│   └──> SNAPSHOT & BACKUP THIS! (Daily snapshots, replicated offsite)
 │
 └── tank/media (Mounted to ~/media)
-    ├── downloads/       (Torrents: staging, active, completed)
+    ├── downloads/       (qBittorrent active & completed downloads)
     ├── movies/          (Curated movie library)
     ├── tv/              (Curated TV show library)
     └── cache/
-        └── jellyfin/    (Transcoding chunks & image cache)
-    └──> EXCLUDED FROM BACKUP SNAPSHOTS! (Terabytes of reproducible media)
+        ├── jellyfin/    (Transcoding chunks & image cache)
+        └── immich-ml/   (Downloaded machine learning model cache)
+    └──> EXCLUDED FROM BACKUP SNAPSHOTS (Multi-terabyte disposable media)
 ```
-
-### Why this structure matters
-
-1. **ZFS Snapshots are instantaneous & tiny**: Taking a snapshot of `tank/appdata` takes milliseconds and consumes only a few megabytes. You can take hourly snapshots, retain 30 days of history, and replicate to an offsite server or cloud without transferring video files.
-2. **Jellyfin cache isolation**: Jellyfin's `/cache` is explicitly mounted to `~/media/cache/jellyfin:/cache`. Transcoding chunks and trickplay thumbnails never pollute the `tank/appdata` snapshot dataset.
-3. **TRaSH Guides Instant Hardlinks**: `qbittorrent`, `radarr`, and `sonarr` all share the exact same root mount `${MEDIA_DIR:-~/media}:/data`. When Sonarr or Radarr imports a finished download, the Linux kernel creates an **atomic hardlink** in milliseconds with **zero extra disk space** used.
 
 ---
 
-## 🚀 Step-by-Step Setup Guide (Step 1 to Final)
+## 🚀 Step-by-Step Setup Guide
 
-### Step 1: Host System & Docker Installation
+### Step 1: Host System & Dependencies Installation
 
-On your Ubuntu/Debian server:
+On your fresh Ubuntu Server installation:
 
 ```bash
 # Update system packages
 sudo apt update && sudo apt upgrade -y
 
-# Install Docker using the official convenience script
+# Install Docker engine & Compose plugin
 curl -fsSL https://get.docker.com | sh
-
-# Allow your user to run Docker without sudo
 sudo usermod -aG docker $USER
+
+# Install ZFS utilities and Samba (for personal network drive)
+sudo apt install -y zfsutils-linux samba
+
+# Apply docker group changes to current session
 newgrp docker
 
-# Verify Docker and Compose V2 installation
+# Verify installations
 docker --version
 docker compose version
+zfs --version
 ```
 
-Verify your user's UID and GID:
+Verify your user UID and GID:
 
 ```bash
 id -u  # Expected: 1000
 id -g  # Expected: 1000
 ```
 
-*(If your UID/GID is not `1000:1000`, update `PUID` and `PGID` in `x-common-env` inside `docker-compose.yml`).*
+*(If different, update `PUID` and `PGID` in `.env`).*
 
 ---
 
-### Step 2: Storage Preparation (ZFS or Standard Directories)
+### Step 2: ZFS Pool Creation
 
-#### Option A: With ZFS (Recommended)
+Identify your physical storage drives by their persistent disk IDs (avoid `/dev/sdX` which can change across reboots):
 
 ```bash
-# Create the appdata dataset for configs
-sudo zfs create -o mountpoint=/home/$USER/home-lab/configs tank/appdata
-
-# Create the bulk media dataset
-sudo zfs create -o mountpoint=/home/$USER/media tank/media
-
-# Ensure permissions belong to your user
-sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/media
+ls -l /dev/disk/by-id/
 ```
 
-#### Option B: Without ZFS (Standard Filesystem)
+Create your ZFS storage pool named `tank`:
 
 ```bash
-mkdir -p ~/home-lab/configs
-mkdir -p ~/media
+# For a mirrored drive setup (recommended for 2 drives):
+sudo zpool create -o ashift=12 -O compression=lz4 tank mirror \
+    /dev/disk/by-id/<drive-1-id> \
+    /dev/disk/by-id/<drive-2-id>
+
+# Or for a single drive setup:
+# sudo zpool create -o ashift=12 -O compression=lz4 tank /dev/disk/by-id/<drive-id>
+
+# Verify pool status
+sudo zpool status tank
 ```
 
-#### Create the standard media subdirectories
+---
+
+### Step 3: Clone Repository
+
+Clone this repository into your home directory **before** creating the dataset mountpoints:
 
 ```bash
+git clone <your-repo-url> ~/home-lab
+cd ~/home-lab
+```
+
+---
+
+### Step 4: Storage Datasets & Directory Preparation
+
+Create the dedicated ZFS datasets with optimal filesystem tuning:
+
+```bash
+# 1. Appdata dataset (databases & container state: atime off, system attributes enabled)
+sudo zfs create -o compression=lz4 -o atime=off -o xattr=sa -o mountpoint=/home/$USER/home-lab/configs tank/appdata
+
+# 2. Photos dataset (Immich photo and video libraries: BACKED UP)
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/photos tank/photos
+
+# 3. Personal Cloud Storage dataset (SMB share & Syncthing offline drive: BACKED UP)
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/storage tank/storage
+
+# 4. Bulk Media dataset (1M recordsize for video streaming: EXCLUDED FROM BACKUP)
+sudo zfs create -o compression=lz4 -o recordsize=1M -o mountpoint=/home/$USER/media tank/media
+
+# 5. Create media subdirectories & isolated transcode caches
 mkdir -p ~/media/downloads
 mkdir -p ~/media/movies
 mkdir -p ~/media/tv
 mkdir -p ~/media/cache/jellyfin
+mkdir -p ~/media/cache/immich-ml
+
+# 6. Ensure all datasets belong to your user
+sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage /home/$USER/media
 ```
 
 ---
 
-### Step 3: Environment Setup
+### Step 5: Personal Cloud Setup (SMB + Syncthing)
 
-Clone this repository and create your `.env` file:
+You have both **live network drive access (SMB)** and **offline two-way file synchronization (Syncthing)** operating on the exact same ZFS dataset (`~/storage`):
+
+#### A. Configure Samba (SMB Share)
+
+1. Edit `/etc/samba/smb.conf`:
+
+```bash
+sudo nano /etc/samba/smb.conf
+```
+
+2. Add this share definition to the bottom of the file:
+
+```ini
+[HomeDrive]
+    comment = Personal Cloud Storage (ZFS)
+    path = /home/%u/storage
+    read only = no
+    browsable = yes
+    valid users = %u
+    create mask = 0664
+    directory mask = 0775
+```
+
+3. Set your Samba password and restart the service:
+
+```bash
+sudo smbpasswd -a $USER
+sudo systemctl restart smbd
+```
+
+*Connect from Windows (`\\<server-ip>\HomeDrive`), macOS (`smb://<server-ip>/HomeDrive`), or mobile files apps.*
+
+#### B. Syncthing (Offline Sync)
+
+* Open `http://<server-ip>:8384`.
+* Syncthing mounts `/storage` directly to `~/storage`.
+* Install the Syncthing client on your laptop. You can sync any folder to your laptop for offline modification (e.g. while traveling). As soon as you reconnect, changes sync back to the server and are automatically captured in your ZFS snapshots!
+
+---
+
+### Step 6: Environment Configuration & Dashboard Templates
+
+1. Copy the environment template:
 
 ```bash
 cd ~/home-lab
@@ -207,169 +282,138 @@ cp example.env .env
 chmod 600 .env
 ```
 
-Open `.env` and fill in your values:
+2. Edit `.env` with your secure credentials:
 
 ```bash
 nano .env
 ```
 
-Key variables to review:
+* `IMMICH_DB_PASSWORD`: Set a secure password (`openssl rand -hex 16`).
+* `PAPERLESS_SECRET_KEY`: Set a secure secret key (`openssl rand -hex 16`).
+* `VAULTWARDEN_DOMAIN`: Public URL (e.g. `https://vault.yourdomain.duckdns.org/`).
+* `VAULTWARDEN_SIGNUPS_ALLOWED`: Default is `true`. Change to `false` after creating your initial vault account.
+* `DUCKDNS_KEY`: Your DuckDNS account token (used only inside NPM for DNS-01 SSL challenge).
 
-* `IMMICH_DB_PASSWORD`: Set a strong random password for PostgreSQL (e.g. `openssl rand -hex 16`).
-* `VAULTWARDEN_DOMAIN`: Set your public Vaultwarden URL (e.g. `https://vault.yourdomain.duckdns.org/`).
-* `VAULTWARDEN_SIGNUPS_ALLOWED`: Keep `true` for initial account registration, then set to `false`.
-* `DUCKDNS_KEY`: Your DuckDNS account token.
-* `MEDIA_DIR`: Path to your media dataset (defaults to `~/media`).
+3. Initialize Homepage dashboard configuration from starter templates:
+
+```bash
+mkdir -p ./configs/homepage/config
+cp -r templates/homepage/* ./configs/homepage/config/
+```
 
 ---
 
-### Step 4: Launching the Stack
+### Step 7: Launch the Stack
 
-Validate the configuration:
+Validate and start the containers:
 
 ```bash
+# Validate compose syntax
 docker compose config
-```
 
-Start all services in detached mode:
-
-```bash
+# Start all containers in detached mode
 docker compose up -d
-```
 
-Monitor initial container startup:
-
-```bash
+# Check running status
 docker compose ps
-docker compose logs -f
 ```
 
 ---
 
-### Step 5: Nginx Proxy Manager & SSL Setup
+### Step 8: Nginx Proxy Manager & SSL Setup (Private LAN Access)
 
-1. Open your browser and navigate to `http://<server-ip>:81`.
-2. **Default login credentials**:
+> [!NOTE]
+> **No Router Port Forwarding Required**: Your server is not exposed to the public internet. In your DuckDNS account, point `yourdomain.duckdns.org` to your server's **local LAN IP** (e.g. `192.168.0.x`). NPM uses the DuckDNS API TXT record (DNS-01 challenge) to issue a valid Let's Encrypt wildcard certificate without needing ports 80/443 open to the world!
+
+1. Open `http://<server-ip>:81`.
+2. Default login credentials:
    * **Email**: `admin@example.com`
    * **Password**: `changeme`
 3. Immediately change your email and admin password when prompted.
-4. **Create a Wildcard Let's Encrypt Certificate**:
-   * Navigate to **SSL Certificates** → **Add SSL Certificate** → **Let's Encrypt**.
+4. **Create Wildcard Let's Encrypt Certificate**:
+   * **SSL Certificates** → **Add SSL Certificate** → **Let's Encrypt**.
    * Domain Names: `*.yourdomain.duckdns.org`, `yourdomain.duckdns.org`.
-   * Enable **Use a DNS Challenge**.
-   * DNS Provider: **DuckDNS**.
-   * Fill in your `DUCKDNS_KEY` token in the credential box.
-   * Agree to the terms and click **Save**.
-5. **Add Proxy Hosts for your services**:
-   * Navigate to **Hosts** → **Proxy Hosts** → **Add Proxy Host**.
-   * Example for Vaultwarden:
-     * Domain: `vault.yourdomain.duckdns.org`
-     * Scheme: `http`
-     * Forward Hostname: `vaultwarden` (Use Docker internal container name!)
-     * Forward Port: `80`
-     * Enable **Block Common Exploits** and **Websockets Support**.
-     * Under the **SSL** tab: Select your Wildcard Certificate, enable **Force SSL** and **HTTP/2**.
+   * Enable **Use a DNS Challenge** → Provider: **DuckDNS**.
+   * Fill in your DuckDNS token and click **Save**.
+5. **Add Proxy Hosts**:
+   * Forward Hostname: Use internal container names (`vaultwarden`, `paperless-ngx`, `jellyfin`).
+   * Forward Port: Corresponding container port (e.g., `80` for Vaultwarden, `8000` for Paperless).
+   * Under the **SSL** tab: Select your Wildcard Certificate, enable **Force SSL**, **HTTP/2**, and **Websockets Support**.
 
 ---
 
-### Step 6: Initial Core Services Configuration
+### Step 9: Core Services Initial Setup
 
 1. **Vaultwarden**:
-   * Access `https://vault.yourdomain.duckdns.org` and create your master vault account.
-   * Once created, set `VAULTWARDEN_SIGNUPS_ALLOWED=false` in `.env` and run `docker compose up -d vaultwarden` to lock signups.
+   * Access `https://vault.yourdomain.duckdns.org` and register your master vault account.
+   * Lock signups: Edit `.env`, set `VAULTWARDEN_SIGNUPS_ALLOWED=false`, and run:
+     ```bash
+     docker compose up -d vaultwarden
+     ```
 2. **Immich**:
-   * Open `http://<server-ip>:2283` and complete the initial administrator setup.
-   * Download the Immich mobile app on iOS/Android, enter your server URL, and enable automatic background backup.
+   * Open `http://<server-ip>:2283` and create the administrator account.
+   * Photos upload directly to `~/photos` (`tank/photos`) and are fully included in daily snapshots and backups!
 3. **Paperless-ngx**:
    * Open `http://<server-ip>:8777`.
-   * Create an initial superuser by running:
-
+   * Create an administrator user:
      ```bash
      docker compose exec -it paperless-ngx python3 manage.py createsuperuser
      ```
 
-   * Log in and configure your document tags, correspondents, and document types.
-
 ---
 
-### Step 7: Media Automation Stack Configuration
-
-To enable instant hardlinks, follow the standard TRaSH Guides paths:
+### Step 10: Media Stack & TRaSH Hardlinks
 
 1. **qBittorrent (`http://<server-ip>:8080`)**:
-   * Default credentials: `admin` / `adminadmin` (or check container logs for temporary password).
-   * Go to **Tools** → **Options** → **Downloads**:
+   * **Password**: Retrieve the initial randomized password:
+     ```bash
+     docker compose logs qbittorrent | grep -i password
+     ```
+   * Log in (`admin` / `<temporary-password>`), change password in **Tools** → **Options** → **Web UI**.
+   * In **Tools** → **Options** → **Downloads**:
      * Default Save Path: `/data/downloads`
-     * Keep incomplete torrents in: `/data/downloads/incomplete`
-2. **Prowlarr (`http://<server-ip>:9696`)**:
-   * Settings → Indexers → Add FlareSolverr (`http://flaresolverr:8191`).
-   * Settings → Apps → Add Sonarr (`http://sonarr:8989`) and Radarr (`http://radarr:7878`).
-   * Add your indexers in Prowlarr; they will automatically sync to Sonarr and Radarr.
-3. **Radarr (`http://<server-ip>:7878`) & Sonarr (`http://<server-ip>:8989`)**:
-   * **Root Folder**: Add `/data/movies` (Radarr) and `/data/tv` (Sonarr).
-   * **Download Client**: Add qBittorrent:
-     * Host: `qbittorrent`
-     * Port: `8080`
-4. **Jellyfin (`http://<server-ip>:8096`)**:
-   * Add Library → Movies → `/data/movies`.
-   * Add Library → Shows → `/data/tv`.
-   * Go to **Dashboard** → **Playback** → **Transcoding**:
-     * Transcode path: `/cache` (Ensures transcode chunks write to non-snapshotted media storage).
-5. **Jellyseerr (`http://<server-ip>:5055`)**:
-   * Sign in with your Jellyfin account.
-   * Connect to Sonarr (`http://sonarr:8989`) and Radarr (`http://radarr:7878`).
+     * Incomplete Save Path: `/data/downloads/incomplete`
+2. **Sonarr (`:8989`) & Radarr (`:7878`)**:
+   * **Root Folders**: Add `/data/movies` (Radarr) and `/data/tv` (Sonarr).
+   * **Download Client**: Add qBittorrent (`host: qbittorrent`, `port: 8080`).
+   * **Category**: Set category to `tv` in Sonarr and `movies` in Radarr.
+3. **Jellyfin (`:8096`)**:
+   * Library paths: `/data/movies` and `/data/tv` (mounted read-only to safeguard media files).
+   * **Dashboard** → **Playback** → **Transcoding**: Transcode path set to `/cache` (routes to `~/media/cache/jellyfin`).
 
 *(For the complete guide on indexers, subtitle automation, and GPU transcoding, see [docs/media-stack-guide.md](docs/media-stack-guide.md)).*
 
 ---
 
-### Step 8: Standalone Raspberry Pi (Pi-hole + Tailscale Subnet Router)
+### Step 11: Standalone Raspberry Pi (Pi-hole + Tailscale)
 
-To keep your home internet online even when the main server reboots:
+Keep home DNS online 100% of the time, even during server maintenance:
 
-1. Connect a Raspberry Pi directly to your router via Ethernet.
-2. Install **Pi-hole** for whole-home ad-blocking and local DNS resolution.
-3. Install **Tailscale** on the Pi and enable Subnet Routing:
-
+1. Flash Raspberry Pi OS Lite on your Pi, assign a static DHCP reservation (e.g. `192.168.0.50`).
+2. Install Pi-hole: `curl -sSL https://install.pi-hole.net | bash`.
+3. Install Tailscale, enable Linux IP forwarding, and advertise your home LAN subnet:
    ```bash
-   sudo tailscale up --advertise-routes=192.168.0.0/24
+   sudo tailscale up --advertise-routes=<your-lan-subnet> --accept-dns=false
    ```
+4. Set Pi-hole as Tailscale's global DNS server.
+5. On mobile devices outside your home, connect via Tailscale to access your SMB drive, Syncthing, Immich, and server web UIs seamlessly.
 
-4. Set the Pi's Tailscale IP as the **Global Nameserver** in the Tailscale admin console.
-5. On your phone: Enable Tailscale on 5G. You get ad-blocking and full access to your home server (`http://192.168.0.x`) with **split-tunnel speed** (no exit node required).
-
-*(For step-by-step instructions, see [docs/pihole-tailscale-guide.md](docs/pihole-tailscale-guide.md)).*
+*(For detailed step-by-step instructions, see [docs/pihole-tailscale-guide.md](docs/pihole-tailscale-guide.md)).*
 
 ---
 
-### Step 9: Backup & Disaster Recovery
+### Step 12: Automated ZFS Snapshots & Recovery
 
-Because all databases and configurations reside in `~/home-lab/configs`, backing up the entire homelab takes one command:
+All container state resides in `tank/appdata`, photos reside in `tank/photos`, and personal documents reside in `tank/storage`:
 
 ```bash
-# Take a manual snapshot of all application configs:
+# Take a manual snapshot of all critical datasets
 sudo zfs snapshot tank/appdata@manual-$(date +%F)
+sudo zfs snapshot tank/photos@manual-$(date +%F)
+sudo zfs snapshot tank/storage@manual-$(date +%F)
 
-# List snapshots:
-sudo zfs list -t snapshot -r tank/appdata
+# List snapshots
+sudo zfs list -t snapshot
 ```
 
-To automate hourly and daily snapshots and send incremental backups to another drive or remote server, see the complete [docs/zfs-backup-guide.md](docs/zfs-backup-guide.md).
-
----
-
-### Step 10: Maintenance & Daily Operations
-
-```bash
-# Pull updated Docker images for all services
-docker compose pull
-
-# Apply updates with zero config loss
-docker compose up -d
-
-# Clean up dangling images and old build cache
-docker image prune -f
-
-# View live container resource consumption
-docker stats
-```
+To configure automated snapshot retention with Sanoid and offsite replication with Syncoid, see [docs/zfs-backup-guide.md](docs/zfs-backup-guide.md).

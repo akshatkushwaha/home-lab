@@ -1,0 +1,85 @@
+---
+# Homepage Services Configuration
+# Grouped by function for clean dashboard visualization
+
+- Infrastructure & Management:
+    - Nginx Proxy Manager:
+        icon: nginx-proxy-manager.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:81"
+        description: Reverse Proxy & SSL Termination
+        widget:
+          type: npm
+          url: "http://nginx-proxy-manager:81"
+
+    - Portainer:
+        icon: portainer.png
+        href: "https://{{HOMEPAGE_VAR_SERVER_IP}}:9443"
+        description: Docker Container Management
+
+    - Uptime Kuma:
+        icon: uptime-kuma.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:3001"
+        description: Service Monitoring & Status
+
+- Security & Documents:
+    - Vaultwarden:
+        icon: vaultwarden.png
+        href: "{{HOMEPAGE_VAR_VAULT_URL}}"
+        description: Bitwarden Password Vault
+
+    - Immich:
+        icon: immich.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:2283"
+        description: Photo & Video Backup
+
+    - Paperless-ngx:
+        icon: paperless-ngx.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8777"
+        description: Document Archiving & OCR
+
+    - Stirling PDF:
+        icon: stirling-pdf.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8085"
+        description: PDF Manipulation Tools
+
+    - Syncthing:
+        icon: syncthing.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8384"
+        description: File Sync & Offline Drive
+
+- Media & Streaming:
+    - Jellyfin:
+        icon: jellyfin.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8096"
+        description: Media Streaming Server
+
+    - Jellyseerr:
+        icon: jellyseerr.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:5055"
+        description: Movie & TV Requests
+
+- Automation & Downloads:
+    - qBittorrent:
+        icon: qbittorrent.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8080"
+        description: Torrent Client
+
+    - Radarr:
+        icon: radarr.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:7878"
+        description: Movie Automation
+
+    - Sonarr:
+        icon: sonarr.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8989"
+        description: TV Show Automation
+
+    - Prowlarr:
+        icon: prowlarr.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:9696"
+        description: Indexer Management
+
+    - Bazarr:
+        icon: bazarr.png
+        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:6767"
+        description: Subtitle Management

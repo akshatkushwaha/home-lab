@@ -1,0 +1,18 @@
+---
+title: "Homelab Dashboard"
+theme: dark
+color: slate
+headerStyle: clean
+layout:
+  Infrastructure & Management:
+    style: row
+    columns: 3
+  Security & Documents:
+    style: row
+    columns: 4
+  Media & Streaming:
+    style: row
+    columns: 2
+  Automation & Downloads:
+    style: row
+    columns: 5

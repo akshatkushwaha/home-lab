@@ -1,4 +1,4 @@
-﻿# 🛡️ Standalone Raspberry Pi Guide (Pi-hole + Tailscale Subnet Router)
+# 🛡️ Standalone Raspberry Pi Guide (Pi-hole + Tailscale Subnet Router)
 
 This guide walks you through setting up a dedicated Raspberry Pi running **Pi-hole** for network-wide ad blocking and **Tailscale** as a Subnet Router for secure remote access without requiring an exit node.
 
@@ -79,8 +79,17 @@ sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
 
 ### Start Tailscale Advertising Your Home LAN Subnet
 
+Find your actual LAN subnet by checking your local IP and route on the Raspberry Pi:
+
 ```bash
-sudo tailscale up --advertise-routes=192.168.0.0/24 --accept-dns=false
+ip route | grep default
+# Example output: default via 192.168.1.1 dev eth0 -> Subnet is 192.168.1.0/24
+```
+
+Start Tailscale, replacing `<your-lan-subnet>` with your actual network subnet (e.g., `192.168.0.0/24` or `192.168.1.0/24`):
+
+```bash
+sudo tailscale up --advertise-routes=<your-lan-subnet> --accept-dns=false
 ```
 
 *(Log in via the authentication link printed in the terminal).*
@@ -90,7 +99,7 @@ sudo tailscale up --advertise-routes=192.168.0.0/24 --accept-dns=false
 1. Open the [Tailscale Machines Admin Console](https://login.tailscale.com/admin/machines).
 2. Locate your `pihole` device.
 3. Click the `...` menu → **Edit route settings...**.
-4. Check the box for `192.168.0.0/24` and click **Save**.
+4. Check the box for your advertised subnet and click **Save**.
 
 ---
 
@@ -104,31 +113,35 @@ Now, make Pi-hole your global DNS resolver across your entire Tailnet:
 4. Toggle **Override local DNS** to **ON**.
 5. Enable Tailscale on your phone or laptop while on mobile data (5G).
    * **Test Ad-blocking**: Visit `https://canyoublockit.com/testing/` to verify ads are blocked.
-   * **Test Speed**: Speedtest runs at full cellular speed because only DNS queries route through the Pi, not video or web traffic!
-   * **Test Home Server Access**: Open `http://192.168.0.<server-ip>:9443` or `2283` to access Portainer or Immich remotely.
+   * **Test Speed**: Runs at full cellular speed because only DNS queries route through the Pi, not bulk media or web traffic!
+   * **Test Home Server Access**: Open your home server's LAN IP (e.g. `http://<server-ip>:2283` or `smb://<server-ip>/HomeDrive`) to access Immich or your personal files remotely.
 
 ---
 
 ## 🏠 Step 5: Router DHCP Configuration (Home-Wide Ad Blocking)
 
-To protect all smart TVs, laptops, and home devices without installing software on them:
+To protect all smart TVs, laptops, and home devices without installing software on each:
 
 1. Log in to your home router admin panel (usually `http://192.168.0.1` or `http://192.168.1.1`).
 2. Navigate to the **DHCP Server / LAN** settings.
-3. Change **DNS Server 1 (Primary)** to your Raspberry Pi's local IP: `192.168.0.50`.
-4. Leave **DNS Server 2 (Secondary)** empty (or point to a secondary Pi-hole if running dual DNS).
-   *(Note: If you put 8.8.8.8 as secondary DNS, devices will bypass Pi-hole and show ads).*
+3. Change **DNS Server 1 (Primary)** to your Raspberry Pi's reserved static IP (e.g. `192.168.0.50`).
+4. Leave **DNS Server 2 (Secondary)** empty (or point to a secondary Pi-hole if running redundant DNS).
+   *(Note: If you put 8.8.8.8 as secondary DNS, devices will periodically query Google DNS and show ads).*
 5. Save settings and renew DHCP leases (or reboot the router).
 
 ---
 
-## 🏷️ Step 6: Local DNS Records in Pi-hole
+## 🏷️ Step 6: Local DNS & Domain Resolution
 
-To access your homelab services via friendly domain names without memorizing port numbers or relying on public DNS:
+To access your homelab services via friendly domain names:
+
+> [!WARNING]
+> **HTTPS Requirement for Vaultwarden**: Modern browsers strictly require a secure HTTPS context (via the Web Crypto API) to encrypt and decrypt Bitwarden vaults. Let's Encrypt cannot issue public SSL certificates for local domains like `.home.arpa`. For Vaultwarden, route through your DuckDNS domain (`https://vault.yourdomain.duckdns.org`) with the wildcard SSL certificate in Nginx Proxy Manager.
+
+For services that do not require Web Crypto (or when routing internally):
 
 1. In the Pi-hole Web UI, navigate to **Local DNS** → **DNS Records**.
-2. Add records pointing to your main server IP (`192.168.0.x`):
-   * `vault.home.arpa` → `192.168.0.x`
-   * `immich.home.arpa` → `192.168.0.x`
-   * `jellyfin.home.arpa` → `192.168.0.x`
-3. Configure Nginx Proxy Manager on the server to listen for these domains!
+2. Add records pointing to your main server LAN IP:
+   * `immich.lan` → `<main-server-ip>`
+   * `jellyfin.lan` → `<main-server-ip>`
+3. Configure Nginx Proxy Manager to route these hostnames if desired.

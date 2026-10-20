@@ -1,4 +1,4 @@
-﻿# 🎬 Complete Media Stack Guide (*arr, Jellyfin, qBittorrent)
+# 🎬 Complete Media Stack Guide (*arr, Jellyfin, qBittorrent)
 
 This guide covers the architecture, configuration, hardlink optimization (TRaSH Guides), and hardware acceleration for the integrated media stack in `docker-compose.yml`.
 
@@ -60,14 +60,25 @@ If hardlinked, both files will display the **exact same inode number** (the firs
 
 ### 1. qBittorrent (`http://<ip>:8080`)
 
-1. Log in (default: `admin` / `adminadmin` or check `docker compose logs qbittorrent`).
-2. Go to **Tools** → **Options** → **Downloads**:
+1. **First-Time Password**:
+   Recent `linuxserver/qbittorrent` releases generate a random temporary password on initial container boot for security. Retrieve it by checking the logs:
+
+   ```bash
+   docker compose logs qbittorrent | grep -i "temporary password"
+   ```
+
+2. Log in with username `admin` and the temporary password.
+3. Immediately change your credentials in **Tools** → **Options** → **Web UI**.
+4. Go to **Tools** → **Options** → **Downloads**:
    * **Default Save Path**: `/data/downloads`
    * Check **Keep incomplete torrents in**: `/data/downloads/incomplete`
-3. Go to **Connection**:
+5. Go to **Connection**:
    * Port used for incoming connections: `6881`
-4. Go to **Speed**:
-   * Configure global rate limits to 80% of your ISP's max upload speed to prevent bufferbloat.
+6. Go to **Speed**:
+   * Configure global rate limits to 80% of your ISP's max upload speed to prevent network bufferbloat.
+
+> [!TIP]
+> **Torrent Privacy & VPN**: If you plan to use public torrent trackers, consider routing qBittorrent's traffic through a VPN container (such as Gluetun) to prevent exposing your home IP.
 
 ---
 
@@ -118,10 +129,14 @@ Prowlarr is your central indexer manager.
 In both Sonarr and Radarr:
 
 1. Navigate to **Settings** → **Download Clients** → Click **+** → **qBittorrent**.
-2. Host: `qbittorrent` (Docker internal name)
-3. Port: `8080`
+2. Host: `qbittorrent` (Docker internal container name).
+3. Port: `8080`.
 4. Username & Password: Your qBittorrent login.
-5. Click **Test** and **Save**.
+5. **Category (CRITICAL)**:
+   * In **Sonarr**: Set Category to `tv`.
+   * In **Radarr**: Set Category to `movies`.
+   *(Setting categories ensures qBittorrent downloads files to `/data/downloads/tv` and `/data/downloads/movies` respectively, preventing Sonarr and Radarr from cross-interfering).*
+6. Click **Test** and **Save**.
 
 ---
 
@@ -151,6 +166,9 @@ Bazarr manages subtitles for both movies and TV shows.
    * Folder: `/data/movies`
 3. Add Library → **Shows**:
    * Folder: `/data/tv`
+
+> [!NOTE]
+> `/data/movies` and `/data/tv` are intentionally mounted read-only (`:ro`) in `docker-compose.yml` to prevent Jellyfin from inadvertently altering your media files. Keep library metadata and image extraction options configured to save inside the Jellyfin config directory, not into media folders.
 
 #### Transcoding Cache Isolation
 
