@@ -239,9 +239,10 @@ cd configs/.zfs/snapshot/
 # 3. List available snapshots
 ls -la
 
-# 4. Clean up any active WAL / SHM files and restore the database from snapshot:
+# 4. Clean up any active WAL / SHM files and restore the database from a chosen snapshot:
 rm -f ~/home-lab/configs/radarr/radarr.db*
-cp -a autosnap_2026-10-19_20:00:00_hourly/radarr/radarr.db* ~/home-lab/configs/radarr/
+# Replace <snapshot_name> with your desired snapshot folder from the ls -la output above:
+cp -a <snapshot_name>/radarr/radarr.db* ~/home-lab/configs/radarr/
 
 # 5. Restart the container
 docker compose start radarr
@@ -269,10 +270,18 @@ On a replacement server:
 
 3. **Restore all critical ZFS datasets from your remote backup server**:
 
+   Query the latest snapshot on the remote backup pool and replicate it back:
+
    ```bash
-   ssh backupuser@remote-nas.lan "zfs send -R backup-tank/homelab-configs@latest" | sudo zfs receive tank/appdata
-   ssh backupuser@remote-nas.lan "zfs send -R backup-tank/homelab-photos@latest" | sudo zfs receive tank/photos
-   ssh backupuser@remote-nas.lan "zfs send -R backup-tank/homelab-storage@latest" | sudo zfs receive tank/storage
+   # Retrieve latest snapshot identifiers
+   LATEST_CONFIGS=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-configs | tail -n 1")
+   LATEST_PHOTOS=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-photos | tail -n 1")
+   LATEST_STORAGE=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-storage | tail -n 1")
+
+   # Receive snapshots into local pool
+   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_CONFIGS}" | sudo zfs receive tank/appdata
+   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_PHOTOS}" | sudo zfs receive tank/photos
+   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_STORAGE}" | sudo zfs receive tank/storage
    ```
 
 4. **Set mountpoints and user ownership**:

@@ -90,7 +90,7 @@ flowchart TD
 | | [Bazarr](https://www.bazarr.media) | `6767` | `6767:6767` | `http://<ip>:6767` | Subtitle manager for Sonarr/Radarr |
 | | [Prowlarr](https://prowlarr.com) | `9696` | `9696:9696` | `http://<ip>:9696` | Torrent/Usenet indexer proxy |
 | | [qBittorrent](https://www.qbittorrent.org) | `8080`, `6881` | `8080:8080`, `6881:6881` | `http://<ip>:8080` | Torrent download client |
-| | [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) | `8191` | `8191:8191` | Internal API | Cloudflare challenge solver for indexers |
+| | [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) | `8191` | `8191:8191` | `http://<ip>:8191` | Cloudflare challenge solver for indexers |
 
 ---
 
@@ -255,6 +255,9 @@ sudo nano /etc/samba/smb.conf
     directory mask = 0775
 ```
 
+> [!TIP]
+> **Client Username Matching**: Samba's `%u` macro expects the connecting client username to match the Linux server user. If connecting from macOS or Windows with a different username, replace `%u` with your specific Linux username (e.g. `path = /home/username/storage` and `valid users = username`).
+
 3. Set your Samba password and restart the service:
 
 ```bash
@@ -269,6 +272,13 @@ sudo systemctl restart smbd
 * Open `http://<server-ip>:8384`.
 * Syncthing mounts `/storage` directly to `~/storage`.
 * Install the Syncthing client on your laptop. You can sync any folder to your laptop for offline modification (e.g. while traveling). As soon as you reconnect, changes sync back to the server and are automatically captured in your ZFS snapshots!
+* **Prevent OS metadata clutter**: In the Syncthing folder settings, add the following to **Ignore Patterns** (`.stignore`) to prevent macOS/Windows desktop metadata files from propagating across devices:
+  ```
+  (?d).DS_Store
+  (?d)Thumbs.db
+  (?d)._*
+  (?d).sync
+  ```
 
 ---
 
@@ -288,10 +298,11 @@ chmod 600 .env
 nano .env
 ```
 
+* `SERVER_IP`: Your server's local LAN IP (e.g. `192.168.0.100`), used by Homepage dashboard links.
 * `IMMICH_DB_PASSWORD`: Set a secure password (`openssl rand -hex 16`).
 * `PAPERLESS_SECRET_KEY`: Set a secure secret key (`openssl rand -hex 16`).
 * `VAULTWARDEN_DOMAIN`: Public URL (e.g. `https://vault.yourdomain.duckdns.org/`).
-* `VAULTWARDEN_SIGNUPS_ALLOWED`: Default is `true`. Change to `false` after creating your initial vault account.
+* `VAULTWARDEN_SIGNUPS_ALLOWED`: Default is `false`. Temporarily set to `true` to register your admin account, then revert to `false`.
 * `DUCKDNS_KEY`: Your DuckDNS account token (used only inside NPM for DNS-01 SSL challenge).
 
 3. Initialize Homepage dashboard configuration from starter templates:
@@ -324,6 +335,8 @@ docker compose ps
 
 > [!NOTE]
 > **No Router Port Forwarding Required**: Your server is not exposed to the public internet. In your DuckDNS account, point `yourdomain.duckdns.org` to your server's **local LAN IP** (e.g. `192.168.0.x`). NPM uses the DuckDNS API TXT record (DNS-01 challenge) to issue a valid Let's Encrypt wildcard certificate without needing ports 80/443 open to the world!
+>
+> **DNS Rebinding Protection Note**: If your home router (e.g., pfSense, OpenWrt, FRITZ!Box) has DNS Rebinding Protection enabled, it may drop DNS responses for public domains that resolve to private LAN IPs. In your router settings, whitelist `duckdns.org` under DNS rebind exceptions or configure local DNS rewrites in Pi-hole.
 
 1. Open `http://<server-ip>:81`.
 2. Default login credentials:

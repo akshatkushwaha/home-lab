@@ -39,7 +39,7 @@ services:
     container_name: vaultwarden
     environment:
       DOMAIN: ${VAULTWARDEN_DOMAIN:?Set VAULTWARDEN_DOMAIN in .env}
-      SIGNUPS_ALLOWED: ${VAULTWARDEN_SIGNUPS_ALLOWED:-true}
+      SIGNUPS_ALLOWED: ${VAULTWARDEN_SIGNUPS_ALLOWED:-false}
       TZ: ${TZ:-UTC}
     volumes:
       - ./configs/vaultwarden/data:/data
@@ -107,7 +107,7 @@ services:
       PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:?Set PAPERLESS_SECRET_KEY in .env}
       PAPERLESS_URL: ${PAPERLESS_URL:-http://localhost:8777}
       PAPERLESS_CSRF_TRUSTED_ORIGINS: ${PAPERLESS_CSRF_TRUSTED_ORIGINS:-http://localhost:8777}
-      PAPERLESS_ALLOWED_HOSTS: ${PAPERLESS_ALLOWED_HOSTS:-*}
+      PAPERLESS_ALLOWED_HOSTS: ${PAPERLESS_ALLOWED_HOSTS:-localhost,127.0.0.1}
       PAPERLESS_TIME_ZONE: ${TZ:-UTC}
       PAPERLESS_OCR_LANGUAGE: eng
     volumes:
@@ -130,7 +130,7 @@ services:
     image: stirlingtools/stirling-pdf:latest
     container_name: stirling-pdf
     environment:
-      - DOCKER_ENABLE_SECURITY=false
+      - DOCKER_ENABLE_SECURITY=${STIRLING_ENABLE_SECURITY:-false}
       - TZ=${TZ:-UTC}
     ports:
       - 8085:8080
@@ -175,6 +175,8 @@ services:
     container_name: homepage
     environment:
       - TZ=${TZ:-UTC}
+      - HOMEPAGE_VAR_SERVER_IP=${SERVER_IP:-127.0.0.1}
+      - HOMEPAGE_VAR_VAULT_URL=${VAULTWARDEN_DOMAIN:-http://localhost}
     volumes:
       - ./configs/homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
