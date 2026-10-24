@@ -25,7 +25,7 @@ When Radarr imports a 40GB movie:
 
 ### The Solution: Unified `/data` Mount
 
-In our `docker-compose.yml`, all media containers share a single root mount:
+In our `docker-compose.yml`, automation and download containers (`qBittorrent`, `Sonarr`, `Radarr`, and `Bazarr`) share a single root mount:
 
 ```yaml
 volumes:
@@ -37,6 +37,9 @@ Inside the containers:
 * Torrents download to: `/data/downloads`
 * Movies live in: `/data/movies`
 * TV Shows live in: `/data/tv`
+
+> [!NOTE]
+> **Jellyfin Read-Only Protection**: Unlike download managers, `jellyfin` mounts `/data/movies:ro` and `/data/tv:ro` individually in read-only mode (`${MEDIA_DIR:-~/media}/movies:/data/movies:ro`). This preserves identical internal library paths while ensuring the media server can never accidentally modify or delete your media files.
 
 When Radarr or Sonarr imports a finished torrent, the Linux kernel creates an **atomic hardlink**:
 
@@ -82,10 +85,10 @@ If hardlinked, both files will display the **exact same inode number** (the firs
 
 ---
 
-### 2. FlareSolverr (`http://flaresolverr:8191`)
+### 2. FlareSolverr (`http://<server-ip>:8191` / `http://flaresolverr:8191`)
 
-* FlareSolverr is an internal proxy used by Prowlarr to bypass Cloudflare and DDoS-Guard anti-bot challenges on public torrent trackers.
-* No Web UI configuration is needed; Prowlarr communicates with it directly over the internal Docker network.
+* FlareSolverr is a proxy used by Prowlarr to bypass Cloudflare and DDoS-Guard anti-bot challenges on public torrent trackers.
+* Port `8191:8191` is exposed on the host so you can directly ping/test its status endpoint (`http://<server-ip>:8191`) to confirm it is operational. Prowlarr connects to it directly over the internal Docker network at `http://flaresolverr:8191`.
 
 ---
 
