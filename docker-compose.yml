@@ -281,6 +281,7 @@ services:
       <<: *common-env
     volumes:
       - ./configs/jellyfin:/config
+      - ./configs/jellyfin/custom-cont-init.d:/custom-cont-init.d
       - ${MEDIA_DIR:-~/media}/cache/jellyfin:/cache
       - ${MEDIA_DIR:-~/media}/movies:/data/movies:ro
       - ${MEDIA_DIR:-~/media}/tv:/data/tv:ro
@@ -300,4 +301,3 @@ services:
     ports:
       - "5055:5055"
     restart: unless-stopped
-
