@@ -136,7 +136,7 @@ To protect all smart TVs, laptops, and home devices without installing software 
 To access your homelab services via friendly domain names:
 
 > [!WARNING]
-> **HTTPS Requirement for Vaultwarden**: Modern browsers strictly require a secure HTTPS context (via the Web Crypto API) to encrypt and decrypt Bitwarden vaults. Let's Encrypt cannot issue public SSL certificates for local domains like `.home.arpa`. For Vaultwarden, route through your DuckDNS domain (`https://vault.yourdomain.duckdns.org`) with the wildcard SSL certificate in Nginx Proxy Manager.
+> **HTTPS Requirement for Vaultwarden**: Modern browsers strictly require a secure HTTPS context (via the Web Crypto API) to encrypt and decrypt Bitwarden vaults. Let's Encrypt cannot issue public SSL certificates for local domains like `.home.arpa`. For Vaultwarden, route through your custom domain (`https://vault.madcow.fyi`) with the wildcard SSL certificate in Nginx Proxy Manager.
 
 For services that do not require Web Crypto (or when routing internally):
 

@@ -10,7 +10,7 @@ A complete, production-grade homelab infrastructure managed via Docker Compose a
 flowchart TD
     subgraph Internet ["External & Remote Access"]
         Client["Mobile / Remote Client (on 5G)"]
-        DuckDNS["DuckDNS (Resolves to Private LAN IP)"]
+        DomainDNS["Custom Domain / DNS (madcow.fyi)"]
         TailscaleNet["Tailscale Mesh Network"]
     end
 
@@ -54,7 +54,7 @@ flowchart TD
     Client -->|Tailscale Split-Tunnel| PiTailscale
     PiTailscale -->|Local LAN| HomeServer
     Client -->|Encrypted DNS| PiHole
-    DuckDNS -->|DNS-01 Challenge for Wildcard SSL| NPM
+    DomainDNS -->|DNS-01 Challenge for Wildcard SSL| NPM
 
     NPM --> Core_Services
     NPM --> Media_Stack
@@ -301,7 +301,7 @@ nano .env
 * `SERVER_IP`: Your server's local LAN IP (e.g. `192.168.0.100`), used by Homepage dashboard links.
 * `IMMICH_DB_PASSWORD`: Set a secure password (`openssl rand -hex 16`).
 * `PAPERLESS_SECRET_KEY`: Set a secure secret key (`openssl rand -hex 16`).
-* `VAULTWARDEN_DOMAIN`: Public URL (e.g. `https://vault.yourdomain.duckdns.org/`).
+* `VAULTWARDEN_DOMAIN`: Public URL (e.g. `https://vault.madcow.fyi/`).
 * `VAULTWARDEN_SIGNUPS_ALLOWED`: Default is `false`. Temporarily set to `true` to register your admin account, then revert to `false`.
 * `DUCKDNS_KEY`: Your DuckDNS account token (used only inside NPM for DNS-01 SSL challenge).
 
@@ -334,9 +334,9 @@ docker compose ps
 ### Step 8: Nginx Proxy Manager & SSL Setup (Private LAN Access)
 
 > [!NOTE]
-> **No Router Port Forwarding Required**: Your server is not exposed to the public internet. In your DuckDNS account, point `yourdomain.duckdns.org` to your server's **local LAN IP** (e.g. `192.168.0.x`). NPM uses the DuckDNS API TXT record (DNS-01 challenge) to issue a valid Let's Encrypt wildcard certificate without needing ports 80/443 open to the world!
+> **No Router Port Forwarding Required**: Your server is not exposed to the public internet. In your DNS provider (e.g. Cloudflare) or DuckDNS account, point `madcow.fyi` and `*.madcow.fyi` to your server's **local LAN IP** (e.g. `192.168.0.x`). NPM uses the DNS API TXT record (DNS-01 challenge) to issue a valid Let's Encrypt wildcard certificate without needing ports 80/443 open to the world!
 >
-> **DNS Rebinding Protection Note**: If your home router (e.g., pfSense, OpenWrt, FRITZ!Box) has DNS Rebinding Protection enabled, it may drop DNS responses for public domains that resolve to private LAN IPs. In your router settings, whitelist `duckdns.org` under DNS rebind exceptions or configure local DNS rewrites in Pi-hole.
+> **DNS Rebinding Protection Note**: If your home router (e.g., pfSense, OpenWrt, FRITZ!Box) has DNS Rebinding Protection enabled, it may drop DNS responses for public domains that resolve to private LAN IPs. In your router settings, whitelist your domain (`madcow.fyi`) under DNS rebind exceptions or configure local DNS rewrites in Pi-hole.
 
 1. Open `http://<server-ip>:81`.
 2. Default login credentials:
@@ -345,9 +345,9 @@ docker compose ps
 3. Immediately change your email and admin password when prompted.
 4. **Create Wildcard Let's Encrypt Certificate**:
    * **SSL Certificates** → **Add SSL Certificate** → **Let's Encrypt**.
-   * Domain Names: `*.yourdomain.duckdns.org`, `yourdomain.duckdns.org`.
-   * Enable **Use a DNS Challenge** → Provider: **DuckDNS**.
-   * Fill in your DuckDNS token and click **Save**.
+   * Domain Names: `*.madcow.fyi`, `madcow.fyi`.
+   * Enable **Use a DNS Challenge** → Provider: Your DNS provider (e.g. Cloudflare, DuckDNS, etc.).
+   * Fill in your DNS provider API token/credentials and click **Save**.
 5. **Add Proxy Hosts**:
    * Forward Hostname: Use internal container names (`vaultwarden`, `paperless-ngx`, `jellyfin`).
    * Forward Port: Corresponding container port (e.g., `80` for Vaultwarden, `8000` for Paperless).
@@ -358,7 +358,7 @@ docker compose ps
 ### Step 9: Core Services Initial Setup
 
 1. **Vaultwarden**:
-   * Access `https://vault.yourdomain.duckdns.org` and register your master vault account.
+   * Access `https://vault.madcow.fyi` and register your master vault account.
    * Lock signups: Edit `.env`, set `VAULTWARDEN_SIGNUPS_ALLOWED=false`, and run:
      ```bash
      docker compose up -d vaultwarden
