@@ -8,12 +8,12 @@ description: "Self-Hosted Infrastructure, Services, and Private Cloud Portal"
 
 Welcome to **madcow.fyi**, the central portal for the Madcow private homelab and cloud infrastructure.
 
-Bare-metal hardware hosts all services. Docker Compose runs the containers, a ZFS pool stores the data, and Tailscale gives private network access with wildcard SSL.
+Bare-metal hardware hosts all services. Docker Compose runs the containers, a ZFS pool stores the data, and NetBird gives private network access with wildcard SSL.
 
 ---
 
 > [!NOTE]
-> Public traffic routes through encrypted tunnels. Administrative and storage services need an active **Tailscale** connection or local network access (`madcow.lan`).
+> Public traffic routes through encrypted tunnels. Administrative and storage services need an active **NetBird** connection or local network access (`madcow.lan`).
 
 ---
 
@@ -218,7 +218,7 @@ The media pipeline uses TRaSH Guides atomic hardlinks for instant file organizat
 ## Infrastructure Highlights
 
 - **ZFS Dataset Isolation**: Separate ZFS datasets (`tank/appdata`, `tank/photos`, `tank/storage`, `tank/media`) use Sanoid for automatic snapshots and Syncoid for offsite backup.
-- **Zero-Trust Remote Access**: The router keeps all inbound ports closed, and a standalone Raspberry Pi runs Tailscale and Pi-hole DNS for remote access.
+- **Zero-Trust Remote Access**: The router keeps all inbound ports closed, and a standalone Raspberry Pi runs NetBird and Pi-hole DNS for remote access.
 - **Unified Reverse Proxy**: Nginx Proxy Manager gets wildcard Let's Encrypt certificates through DNS-01 validation.
 
 For full infrastructure documentation, setup instructions, and recovery procedures, see the [Homelab Repository Documentation](https://github.com/akshatkushwaha/home-lab).
