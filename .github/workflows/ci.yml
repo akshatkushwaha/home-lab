@@ -1,0 +1,54 @@
+name: Homelab CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate-config:
+    name: Compose and YAML Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check Docker Compose configuration
+        run: docker compose --env-file example.env config --quiet
+
+      - name: Check YAML files
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'EOF'
+          import glob, yaml
+          files = ['docker-compose.yml', '.github/workflows/ci.yml'] + glob.glob('templates/homepage/*.yaml')
+          for path in files:
+              with open(path, 'r', encoding='utf-8') as f:
+                  yaml.safe_load(f)
+              print(f'Valid YAML: {path}')
+          EOF
+
+      - name: Check for tracked runtime or secret files
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$|^configs/|\.(key|pem|db)$'; then
+            echo "Error: secret or runtime file is tracked in Git."
+            exit 1
+          fi
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
