@@ -3,9 +3,9 @@
     - GitHub:
         - icon: github.png
           href: https://github.com/
-    - DuckDNS:
-        - icon: duckdns.png
-          href: https://www.duckdns.org/
+    - Cloudflare:
+        - icon: cloudflare.png
+          href: https://dash.cloudflare.com/
     - TRaSH Guides:
         - icon: trash.png
           href: https://trash-guides.info/
