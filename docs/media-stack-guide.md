@@ -60,7 +60,7 @@ ls -l -i ~/media/movies/SomeMovie/SomeMovie.mkv ~/media/downloads/SomeMovie.mkv
 
 ## Step-by-Step Service Setup
 
-### 1. qBittorrent (`http://<ip>:8080`)
+### 1. qBittorrent (`http://<private-ip>:8080`)
 
 Recent `linuxserver/qbittorrent` images make a random temporary password when the container starts for the first time.
 
@@ -70,7 +70,7 @@ Recent `linuxserver/qbittorrent` images make a random temporary password when th
    docker compose logs qbittorrent | grep -i "temporary password"
    ```
 
-2. Open `http://<ip>:8080` and log in with username `admin` and the temporary password.
+2. Open `http://<private-ip>:8080` and log in with username `admin` and the temporary password.
 3. Go to **Tools** -> **Options** -> **Web UI** and change your password.
 4. Go to **Tools** -> **Options** -> **Downloads** and set these paths:
    * **Default Save Path**: `/data/downloads`
@@ -83,16 +83,16 @@ Recent `linuxserver/qbittorrent` images make a random temporary password when th
 
 ---
 
-### 2. FlareSolverr (`http://<server-ip>:8191` or `http://flaresolverr:8191`)
+### 2. FlareSolverr (`http://<private-ip>:8191` or `http://flaresolverr:8191`)
 
 FlareSolverr acts as a proxy for Prowlarr to solve Cloudflare and DDoS-Guard anti-bot checks on public torrent trackers.
 
-* The host exposes port `8191:8191` so you can open `http://<server-ip>:8191` to check its status.
-* Prowlarr connects directly to FlareSolverr over the internal Docker network at `http://flaresolverr:8191`.
+* The host exposes port `8191:8191` on `PRIVATE_IP` so you can open `http://<private-ip>:8191` to check its status.
+* Prowlarr connects directly to FlareSolverr over the internal `private_net` Docker network at `http://flaresolverr:8191`.
 
 ---
 
-### 3. Prowlarr (`http://<ip>:9696`)
+### 3. Prowlarr (`http://<private-ip>:9696`)
 
 Prowlarr manages all torrent and Usenet indexers from one place.
 
@@ -139,7 +139,7 @@ Do these steps in both Sonarr and Radarr:
 
 ---
 
-### 5. Bazarr (`http://<ip>:6767`)
+### 5. Bazarr (`http://<private-ip>:6767`)
 
 Bazarr manages subtitles for movies and TV shows.
 
@@ -155,7 +155,7 @@ Bazarr manages subtitles for movies and TV shows.
 
 ---
 
-### 6. Jellyfin (`http://<ip>:8096`)
+### 6. Jellyfin (`http://<shared-ip>:8096`)
 
 #### Add Media Libraries
 
@@ -195,7 +195,7 @@ If your server has an Intel CPU with QuickSync or an AMD/NVIDIA GPU, do these st
 
 ---
 
-### 7. Jellyseerr (`http://<ip>:5055`)
+### 7. Jellyseerr (`http://<shared-ip>:5055`)
 
 Jellyseerr gives users a media request interface for movies and TV shows.
 
