@@ -1,75 +1,76 @@
-# 🛡️ Standalone Raspberry Pi Guide (Pi-hole + Tailscale Subnet Router)
+# Standalone Raspberry Pi Guide (Pi-hole and Tailscale Subnet Router)
 
-This guide walks you through setting up a dedicated Raspberry Pi running **Pi-hole** for network-wide ad blocking and **Tailscale** as a Subnet Router for secure remote access without requiring an exit node.
-
----
-
-## 🎯 Architecture Goals
-
-1. **High Availability DNS ("The Family Approval Factor")**: DNS remains 100% online even when your main home server is rebooting, running ZFS scrubs, or updating containers.
-2. **Whole-Home Ad-Blocking**: Blocks ads, trackers, and telemetry on smart TVs, mobile phones, tablets, and PCs without client-side extensions.
-3. **Split-Tunnel Mobile DNS**: When you are outside on 5G, your phone connects to Tailscale for ad-blocking and local homelab access with **full native 5G speed** (no slow exit node routing).
-4. **Subnet Routing**: The Pi bridges your Tailnet to your entire home network (`192.168.0.0/24`). You can access all home server apps (Jellyfin, Immich, Portainer, etc.) remotely at their local IPs.
+This guide gives step-by-step instructions to set up a Raspberry Pi with **Pi-hole** for network-wide ad block and **Tailscale** as a subnet router. You do not need an exit node for remote access.
 
 ---
 
-## 📋 Step 1: Raspberry Pi OS Installation
+## Architecture Goals
+
+1. **High-Availability DNS**: DNS stays online when the main home server reboots, runs ZFS scrubs, or updates containers.
+2. **Whole-Home Ad Block**: Pi-hole blocks ads, trackers, and telemetry on smart TVs, phones, tablets, and computers with no client software.
+3. **Split-Tunnel Mobile DNS**: When you use 5G away from home, your phone connects to Tailscale for ad block and LAN access at full cellular speed.
+4. **Subnet Route Bridge**: The Pi bridges your Tailnet to your home network (`192.168.0.0/24`) so you can reach local services remotely.
+
+---
+
+## Step 1: Install Raspberry Pi OS
 
 1. Download the [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
-2. Select **Raspberry Pi OS Lite (64-bit)** (headless, no desktop environment needed).
-3. Click the gear icon (Settings):
-   * Set hostname: `pihole`
-   * Enable SSH with password or authorized public key.
+2. Select **Raspberry Pi OS Lite (64-bit)** because a desktop interface is not necessary.
+3. Click the gear icon (**Settings**) and set these options:
+   * Set the hostname to `pihole`.
+   * Turn on SSH with a password or an authorized public key.
    * Set your username and password.
-   * (Optional) Set Wi-Fi credentials if not using an Ethernet cable (Ethernet is strongly recommended for DNS).
-4. Flash the SD card and boot your Raspberry Pi.
-5. In your router's admin panel, create a **Static DHCP Reservation** for your Pi (e.g. `192.168.0.50`).
+   * Enter Wi-Fi credentials only if you cannot use an Ethernet cable (Ethernet gives better DNS reliability).
+4. Write the image to the SD card and start your Raspberry Pi.
+5. In your router admin panel, make a static DHCP reservation for the Pi (for example, `192.168.0.50`).
 
 ---
 
-## 🛡️ Step 2: Pi-hole Installation
+## Step 2: Install Pi-hole
 
-SSH into the Raspberry Pi:
+1. Connect to the Raspberry Pi through SSH:
 
 ```bash
 ssh <user>@192.168.0.50
 ```
 
-Run the official Pi-hole installation script:
+2. Run the Pi-hole installation script:
 
 ```bash
 curl -sSL https://install.pi-hole.net | bash
 ```
 
-Follow the on-screen installer prompts:
+3. Select these options when the installer prompts you:
+   * **Interface**: Select `eth0` (Ethernet) or `wlan0` (Wi-Fi).
+   * **Upstream DNS Provider**: Select Cloudflare (`1.1.1.1`), Quad9 (`9.9.9.9`), or Google (`8.8.8.8`).
+   * **Blocklist**: Accept the default StevenBlack unified hosts list.
+   * **Web Admin Interface**: Select **Yes**.
+   * **Web Server (lighttpd)**: Select **Yes**.
 
-* **Interface**: Choose `eth0` (Ethernet) or `wlan0` (Wi-Fi).
-* **Upstream DNS Provider**: Choose Cloudflare (`1.1.1.1`), Quad9 (`9.9.9.9`), or Google (`8.8.8.8`).
-* **Blocklist**: Accept the default StevenBlack unified hosts list.
-* **Web Admin Interface**: Select **Yes**.
-* **Web Server (lighttpd)**: Select **Yes**.
-
-Once installation finishes, set your admin web interface password:
+4. Set your web interface password after installation finishes:
 
 ```bash
 sudo pihole -a -p
 ```
 
-Access the Pi-hole dashboard at `http://192.168.0.50/admin`.
+5. Open the Pi-hole dashboard at `http://192.168.0.50/admin`.
 
 ---
 
-## 🔒 Step 3: Tailscale Installation & Subnet Router
+## Step 3: Install Tailscale and Set Up the Subnet Router
 
-Install Tailscale on the Raspberry Pi:
+1. Run this command to install Tailscale on the Raspberry Pi:
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 ```
 
-### Enable Linux IP Forwarding
+### Turn On Linux IP Forward
 
-Tailscale needs IP forwarding to act as a subnet router:
+Tailscale needs Linux IP forward settings to work as a subnet router.
+
+2. Run these commands to turn on IPv4 and IPv6 packet forward settings:
 
 ```bash
 echo 'net.ipv4.ip_forward = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf
@@ -77,71 +78,69 @@ echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.d/99-tailscale
 sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
 ```
 
-### Start Tailscale Advertising Your Home LAN Subnet
+### Advertise Your Home LAN Subnet
 
-Find your actual LAN subnet by checking your local IP and route on the Raspberry Pi:
+3. Run this command on the Raspberry Pi to find your LAN subnet:
 
 ```bash
 ip route | grep default
 # Example output: default via 192.168.1.1 dev eth0 -> Subnet is 192.168.1.0/24
 ```
 
-Start Tailscale, replacing `<your-lan-subnet>` with your actual network subnet (e.g., `192.168.0.0/24` or `192.168.1.0/24`):
+4. Start Tailscale and replace `<your-lan-subnet>` with your network subnet (for example, `192.168.0.0/24` or `192.168.1.0/24`):
 
 ```bash
 sudo tailscale up --advertise-routes=<your-lan-subnet> --accept-dns=false
 ```
 
-*(Log in via the authentication link printed in the terminal).*
+5. Open the authentication link shown in the terminal to log in.
 
-### Approve the Subnet Route in Tailscale Admin Console
+### Approve the Subnet Route in the Tailscale Admin Console
 
-1. Open the [Tailscale Machines Admin Console](https://login.tailscale.com/admin/machines).
-2. Locate your `pihole` device.
-3. Click the `...` menu → **Edit route settings...**.
-4. Check the box for your advertised subnet and click **Save**.
+6. Open the [Tailscale Machines Admin Console](https://login.tailscale.com/admin/machines).
+7. Find your `pihole` device.
+8. Click the `...` menu and select **Edit route settings...**.
+9. Select the box for your advertised subnet and click **Save**.
 
 ---
 
-## 📱 Step 4: Configure Split-Tunnel DNS for Mobile Devices
+## Step 4: Set Up Split-Tunnel DNS for Mobile Devices
 
-Now, make Pi-hole your global DNS resolver across your entire Tailnet:
+Set Pi-hole as the global DNS resolver across your Tailnet:
 
 1. Open the [Tailscale DNS Admin Console](https://login.tailscale.com/admin/dns).
-2. Under **Nameservers**, click **Add nameserver** → **Custom**.
-3. Enter your Raspberry Pi's **Tailscale 100.x.y.z IP** (found on the Machines page).
-4. Toggle **Override local DNS** to **ON**.
-5. Enable Tailscale on your phone or laptop while on mobile data (5G).
-   * **Test Ad-blocking**: Visit `https://canyoublockit.com/testing/` to verify ads are blocked.
-   * **Test Speed**: Runs at full cellular speed because only DNS queries route through the Pi, not bulk media or web traffic!
-   * **Test Home Server Access**: Open your home server's LAN IP (e.g. `http://<server-ip>:2283` or `smb://<server-ip>/HomeDrive`) to access Immich or your personal files remotely.
+2. Under **Nameservers**, click **Add nameserver** and select **Custom**.
+3. Enter the **Tailscale 100.x.y.z IP** of your Raspberry Pi (shown on the Machines page).
+4. Set **Override local DNS** to **ON**.
+5. Turn on Tailscale on your phone or laptop while on mobile data (5G) and do these checks:
+   * Open `https://canyoublockit.com/testing/` to make sure ads do not load.
+   * Check network speed to make sure only DNS queries go through the Pi while web traffic uses full cellular speed.
+   * Open `http://<server-ip>:2283` or `smb://<server-ip>/HomeDrive` to make sure remote LAN access works.
 
 ---
 
-## 🏠 Step 5: Router DHCP Configuration (Home-Wide Ad Blocking)
+## Step 5: Set Up Router DHCP (Home-Wide Ad Block)
 
-To protect all smart TVs, laptops, and home devices without installing software on each:
+Set your router DHCP server to send Pi-hole DNS to all home devices:
 
 1. Log in to your home router admin panel (usually `http://192.168.0.1` or `http://192.168.1.1`).
-2. Navigate to the **DHCP Server / LAN** settings.
-3. Change **DNS Server 1 (Primary)** to your Raspberry Pi's reserved static IP (e.g. `192.168.0.50`).
-4. Leave **DNS Server 2 (Secondary)** empty (or point to a secondary Pi-hole if running redundant DNS).
-   *(Note: If you put 8.8.8.8 as secondary DNS, devices will periodically query Google DNS and show ads).*
-5. Save settings and renew DHCP leases (or reboot the router).
+2. Go to the **DHCP Server** or **LAN** settings.
+3. Set **DNS Server 1 (Primary)** to the static IP of your Raspberry Pi (for example, `192.168.0.50`).
+4. Keep **DNS Server 2 (Secondary)** empty, or enter a second Pi-hole IP address.
+   * If you enter `8.8.8.8` as a secondary DNS server, devices can bypass Pi-hole and show ads.
+5. Save your settings and renew DHCP leases (or restart the router).
 
 ---
 
-## 🏷️ Step 6: Local DNS & Domain Resolution
-
-To access your homelab services via friendly domain names:
+## Step 6: Set Up Local DNS and Domain Names
 
 > [!WARNING]
-> **HTTPS Requirement for Vaultwarden**: Modern browsers strictly require a secure HTTPS context (via the Web Crypto API) to encrypt and decrypt Bitwarden vaults. Let's Encrypt cannot issue public SSL certificates for local domains like `.home.arpa`. For Vaultwarden, route through your custom domain (`https://vault.madcow.fyi`) with the wildcard SSL certificate in Nginx Proxy Manager.
+> Route Vaultwarden through your custom domain (`https://vault.madcow.fyi`) with a valid SSL certificate in Nginx Proxy Manager. Modern browsers need a secure HTTPS context (Web Crypto API) to encrypt Bitwarden vaults, and Let's Encrypt cannot issue certificates for local `.home.arpa` domains.
 
-For services that do not require Web Crypto (or when routing internally):
+For services that do not need Web Crypto, or for internal routes:
 
-1. In the Pi-hole Web UI, navigate to **Local DNS** → **DNS Records**.
-2. Add records pointing to your main server LAN IP:
-   * `immich.lan` → `<main-server-ip>`
-   * `jellyfin.lan` → `<main-server-ip>`
-3. Configure Nginx Proxy Manager to route these hostnames if desired.
+1. In the Pi-hole Web UI, go to **Local DNS** -> **DNS Records**.
+2. Add DNS records that point to your main server LAN IP address:
+   * `immich.lan` -> `<main-server-ip>`
+   * `jellyfin.lan` -> `<main-server-ip>`
+3. Add the same proxy hosts in Nginx Proxy Manager if needed.

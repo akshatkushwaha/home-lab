@@ -1,18 +1,18 @@
-# 💾 ZFS Snapshot & Backup Guide
+# ZFS Snapshot and Backup Guide
 
-This guide details the complete storage architecture, automated snapshot scheduling, remote replication, and disaster recovery procedures for this homelab stack.
+This guide explains the storage architecture, automatic snapshot schedule, remote replication, and disaster recovery procedures for this homelab.
 
 ---
 
-## 🏗️ Storage Architecture
+## Storage Architecture
 
-Our storage model strictly isolates **critical state**, **personal memories & photos**, **personal cloud documents**, and **disposable bulk media**:
+The storage model separates critical application state, personal photos, personal documents, and disposable bulk media into four datasets:
 
 ```
 ZFS Pool: tank
 │
 ├── tank/appdata (Mounted to ./configs inside ~/home-lab)
-│   ├── Size: ~5 GB – 20 GB
+│   ├── Size: ~5 GB - 20 GB
 │   ├── Contents: SQLite databases, Immich Postgres data, container configs, SSL certs
 │   ├── Tuning: compression=lz4, atime=off, xattr=sa
 │   ├── Snapshot Policy: Hourly (keep 48), Daily (keep 30), Monthly (keep 12)
@@ -46,61 +46,65 @@ ZFS Pool: tank
 
 ---
 
-## 🛠️ Step 1: Initial Pool & Dataset Creation
+## Step 1: Make the ZFS Pool and Datasets
 
-> [!IMPORTANT]
-> Always clone the `~/home-lab` git repository **before** creating dataset mountpoints so `git clone` does not conflict with existing directories.
+> [!WARNING]
+> Clone the `~/home-lab` git repository before you make the dataset mountpoints. If the mountpoint directories exist first, `git clone` fails.
 
-Run these commands on the Ubuntu ZFS host:
+1. Run these commands on the Ubuntu ZFS host to set up the pool, datasets, and folders:
 
 ```bash
-# 1. Install ZFS utilities (if not already installed)
+# 1. Install ZFS utilities if not installed
 sudo apt update && sudo apt install -y zfsutils-linux
 
-# 2. Identify physical drives by ID (avoid /dev/sdX)
+# 2. List physical drives by ID (avoid /dev/sdX)
 ls -l /dev/disk/by-id/
 
-# 3. Create the ZFS storage pool named 'tank' (mirrored setup example):
+# 3. Make the ZFS pool named 'tank' (mirrored setup example)
 sudo zpool create -o ashift=12 -O compression=lz4 tank mirror \
     /dev/disk/by-id/<disk-1-id> \
     /dev/disk/by-id/<disk-2-id>
 
-# 4. Clone this repository into your home directory:
+# 4. Clone this repository into your home directory
 git clone <your-repo-url> ~/home-lab
 
-# 5. Create the appdata dataset for container configs and databases:
+# 5. Make the appdata dataset for container configs and databases
 sudo zfs create -o compression=lz4 -o atime=off -o xattr=sa -o mountpoint=/home/$USER/home-lab/configs tank/appdata
 
-# 6. Create the dedicated photos dataset (Immich upload destination):
+# 6. Make the photos dataset for Immich uploads
 sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/photos tank/photos
 
-# 7. Create the personal cloud storage dataset (SMB share & Syncthing):
+# 7. Make the personal storage dataset for SMB and Syncthing
 sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/storage tank/storage
 
-# 8. Create the bulk media dataset (1M recordsize for video streaming):
+# 8. Make the bulk media dataset (1M recordsize for video streams)
 sudo zfs create -o compression=lz4 -o recordsize=1M -o mountpoint=/home/$USER/media tank/media
 
-# 9. Create disposable media and transcode cache subdirectories:
+# 9. Make subdirectories for media and transcode caches
 mkdir -p /home/$USER/media/{downloads,movies,tv,cache/jellyfin,cache/immich-ml}
 
-# 10. Set ownership to your user across all datasets:
+# 10. Give ownership of all datasets to your user
 sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage /home/$USER/media
 ```
 
 ---
 
-## ⏱️ Step 2: Automated Snapshot Management (Sanoid)
+## Step 2: Set Up Automatic Snapshots (Sanoid)
 
-[Sanoid](https://github.com/jimsalterjrs/sanoid) is a policy-driven ZFS snapshot management tool that automatically creates, rotates, and prunes snapshots.
+[Sanoid](https://github.com/jimsalterjrs/sanoid) makes, rotates, and prunes ZFS snapshots based on retention rules.
 
-### Installation
+### Install Sanoid
+
+1. Run these commands to install Sanoid:
 
 ```bash
 sudo apt update
 sudo apt install -y sanoid
 ```
 
-### Configuration: `/etc/sanoid/sanoid.conf`
+### Edit `/etc/sanoid/sanoid.conf`
+
+2. Put this configuration into `/etc/sanoid/sanoid.conf`:
 
 ```ini
 [tank/appdata]
@@ -151,13 +155,13 @@ sudo apt install -y sanoid
     autoprune = yes
 ```
 
-Enable the systemd timer:
+3. Start the systemd timer for Sanoid:
 
 ```bash
 sudo systemctl enable --now sanoid.timer
 ```
 
-Verify snapshot execution:
+4. Run these commands to check that Sanoid made snapshots:
 
 ```bash
 sudo zfs list -t snapshot -r tank/appdata
@@ -167,22 +171,22 @@ sudo zfs list -t snapshot -r tank/storage
 
 ---
 
-## 🔄 Step 3: Remote Offsite Replication (Syncoid)
+## Step 3: Set Up Remote Offsite Replication (Syncoid)
 
-Syncoid transfers ZFS snapshots incrementally over SSH to another machine (NAS, secondary PC, or cloud VPS) using `zfs send | zfs recv`.
+Syncoid sends ZFS snapshots over SSH to a remote machine (a NAS, a second PC, or a cloud VPS) with `zfs send | zfs recv`.
 
-### Prerequisites for Remote Replication
+### Set Up SSH Access
 
-1. Generate an SSH key on your server and copy it to the remote backup destination:
+1. Make an SSH key on your server and copy it to the remote backup host:
    ```bash
    ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
    ssh-copy-id backupuser@remote-nas.lan
    ```
-2. Ensure `backupuser` has appropriate ZFS permissions (`zfs allow`) or root access on the target pool.
+2. Make sure `backupuser` has ZFS permissions (`zfs allow`) or root access on the target pool.
 
-### Automated Nightly Replication Script
+### Set Up the Nightly Replication Script
 
-Create a script at `/usr/local/bin/backup-homelab.sh`:
+1. Put this script into `/usr/local/bin/backup-homelab.sh`:
 
 ```bash
 #!/bin/bash
@@ -196,20 +200,20 @@ syncoid --no-privilege-elevation \
         -r tank/appdata \
         backupuser@remote-nas.lan:backup-tank/homelab-configs
 
-# 3. Replicate photos (Immich memories)
+# 3. Replicate photos (Immich library)
 syncoid --no-privilege-elevation \
         -r tank/photos \
         backupuser@remote-nas.lan:backup-tank/homelab-photos
 
-# 4. Replicate personal storage (SMB files & Syncthing documents)
+# 4. Replicate personal storage (SMB files and Syncthing documents)
 syncoid --no-privilege-elevation \
         -r tank/storage \
         backupuser@remote-nas.lan:backup-tank/homelab-storage
 
-echo "Homelab backup successfully completed on $(date)"
+echo "Homelab backup completed on $(date)"
 ```
 
-Make it executable and schedule via crontab:
+2. Make the script executable and add a nightly cron job at 3:00 AM:
 
 ```bash
 sudo chmod +x /usr/local/bin/backup-homelab.sh
@@ -219,32 +223,34 @@ sudo chmod +x /usr/local/bin/backup-homelab.sh
 
 ---
 
-## 🚨 Disaster Recovery Runbook
+## Disaster Recovery Runbook
 
-### Scenario A: Reverting a single corrupted service or database
+### Scenario A: Restore One Corrupted Service or Database
 
-If an update or accidental deletion corrupts a service (e.g. Radarr or Vaultwarden):
+Use this procedure when an update or accidental removal corrupts a service (for example, Radarr or Vaultwarden).
 
 > [!CAUTION]
-> **SQLite WAL Consistency**: Containers like Radarr and Sonarr write to `radarr.db-wal` and `radarr.db-shm`. You must remove active journal files before restoring the checkpointed `.db` file, otherwise newer WAL logs will replay on top of old data and corrupt the database.
+> Remove active journal files (`-wal` and `-shm`) before you restore a `.db` file. Containers such as Radarr and Sonarr write to `radarr.db-wal` and `radarr.db-shm`. If you keep those files, newer WAL logs replay on top of old data and cause database corruption.
+
+1. Run these commands to stop the container, restore the database from a snapshot, and restart the container:
 
 ```bash
 # 1. Stop the affected container
 cd ~/home-lab
 docker compose stop radarr
 
-# 2. Navigate to the hidden ZFS snapshot directory inside the configs folder
+# 2. Go to the hidden ZFS snapshot directory inside configs
 cd configs/.zfs/snapshot/
 
 # 3. List available snapshots
 ls -la
 
-# 4. Clean up any active WAL / SHM files and restore the database from a chosen snapshot:
+# 4. Remove active WAL and SHM files, then copy the database from a snapshot
 rm -f ~/home-lab/configs/radarr/radarr.db*
-# Replace <snapshot_name> with your desired snapshot folder from the ls -la output above:
+# Replace <snapshot_name> with the snapshot folder name from step 3:
 cp -a <snapshot_name>/radarr/radarr.db* ~/home-lab/configs/radarr/
 
-# 5. Restart the container
+# 5. Start the container again
 docker compose start radarr
 ```
 
@@ -252,9 +258,9 @@ docker compose start radarr
 
 ### Scenario B: Full Disaster Recovery (Total Hardware Loss)
 
-On a replacement server:
+Run these steps on a replacement server:
 
-1. **Install OS, Docker & ZFS utilities**:
+1. Install ZFS utilities, Samba, and Docker:
 
    ```bash
    sudo apt update && sudo apt install -y zfsutils-linux samba
@@ -262,29 +268,27 @@ On a replacement server:
    sudo usermod -aG docker $USER
    ```
 
-2. **Clone the git repository first**:
+2. Clone the git repository into your home directory first:
 
    ```bash
    git clone <repo-url> ~/home-lab
    ```
 
-3. **Restore all critical ZFS datasets from your remote backup server**:
-
-   Query the latest snapshot on the remote backup pool and replicate it back:
+3. Restore all critical ZFS datasets from your remote backup server:
 
    ```bash
-   # Retrieve latest snapshot identifiers
+   # Get the latest snapshot names
    LATEST_CONFIGS=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-configs | tail -n 1")
    LATEST_PHOTOS=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-photos | tail -n 1")
    LATEST_STORAGE=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-storage | tail -n 1")
 
-   # Receive snapshots into local pool
+   # Receive snapshots into the local pool
    ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_CONFIGS}" | sudo zfs receive tank/appdata
    ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_PHOTOS}" | sudo zfs receive tank/photos
    ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_STORAGE}" | sudo zfs receive tank/storage
    ```
 
-4. **Set mountpoints and user ownership**:
+4. Set the dataset mountpoints and user ownership:
 
    ```bash
    sudo zfs set mountpoint=/home/$USER/home-lab/configs tank/appdata
@@ -293,12 +297,12 @@ On a replacement server:
    sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage
    ```
 
-5. **Start the stack**:
+5. Restore or recreate your `.env` file, then start the stack:
 
    ```bash
    cd ~/home-lab
-   # Restore your .env file or recreate from example.env
+   # Restore your .env file or copy it from example.env
    docker compose up -d
    ```
 
-All containers will start with 100% of their previous state, configurations, photos, documents, and databases intact.
+All containers start with their previous state, configs, photos, documents, and databases intact.

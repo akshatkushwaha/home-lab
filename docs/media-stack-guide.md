@@ -1,14 +1,14 @@
-# 🎬 Complete Media Stack Guide (*arr, Jellyfin, qBittorrent)
+# Complete Media Stack Guide (*arr, Jellyfin, qBittorrent)
 
-This guide covers the architecture, configuration, hardlink optimization (TRaSH Guides), and hardware acceleration for the integrated media stack in `docker-compose.yml`.
+This guide explains the architecture, setup, hardlink optimization (TRaSH Guides), and hardware acceleration for the media stack in `docker-compose.yml`.
 
 ---
 
-## ⚡ The TRaSH Guides Hardlink Principle
+## TRaSH Guides Hardlink Principle
 
-### The Problem with Default Configurations
+### Problem with Default Volume Maps
 
-If you map volumes like this:
+Suppose you map volumes like this example:
 
 ```yaml
 volumes:
@@ -16,199 +16,192 @@ volumes:
   - ~/media/movies:/movies
 ```
 
-Docker treats `/downloads` and `/movies` as **two completely separate virtual filesystems**, even though on the host they sit on the exact same ZFS dataset!
-When Radarr imports a 40GB movie:
+Docker treats `/downloads` and `/movies` as two separate virtual filesystems, even though both sit on the same ZFS dataset on the host. When Radarr imports a 40 GB movie, these problems happen:
 
-* It cannot create a hardlink (`EXDEV: Invalid cross-device link`).
-* It is forced to perform a **slow, I/O-heavy file copy**.
-* It **doubles your disk usage** (40GB download + 40GB movie = 80GB used).
+* Radarr cannot make a hardlink (`EXDEV: Invalid cross-device link`).
+* Radarr must do a slow file copy with high disk I/O.
+* The file copy doubles disk usage (40 GB download plus 40 GB movie equals 80 GB used).
 
-### The Solution: Unified `/data` Mount
+### Solution: Shared `/data` Mount
 
-In our `docker-compose.yml`, automation and download containers (`qBittorrent`, `Sonarr`, `Radarr`, and `Bazarr`) share a single root mount:
+In `docker-compose.yml`, the download and automation containers (`qBittorrent`, `Sonarr`, `Radarr`, and `Bazarr`) share one root mount:
 
 ```yaml
 volumes:
   - ${MEDIA_DIR:-~/media}:/data
 ```
 
-Inside the containers:
+Inside the containers, the directories use these paths:
 
-* Torrents download to: `/data/downloads`
-* Movies live in: `/data/movies`
-* TV Shows live in: `/data/tv`
+* Torrents download to `/data/downloads`.
+* Movies reside in `/data/movies`.
+* TV shows reside in `/data/tv`.
 
 > [!NOTE]
-> **Jellyfin Read-Only Protection**: Unlike download managers, `jellyfin` mounts `/data/movies:ro` and `/data/tv:ro` individually in read-only mode (`${MEDIA_DIR:-~/media}/movies:/data/movies:ro`). This preserves identical internal library paths while ensuring the media server can never accidentally modify or delete your media files.
+> Unlike download managers, `jellyfin` mounts `/data/movies:ro` and `/data/tv:ro` individually in read-only mode (`${MEDIA_DIR:-~/media}/movies:/data/movies:ro`). This keeps the same internal library paths and prevents changes or removals in your media files.
 
-When Radarr or Sonarr imports a finished torrent, the Linux kernel creates an **atomic hardlink**:
+When Radarr or Sonarr imports a finished torrent, the Linux kernel makes an atomic hardlink with these results:
 
-* **Duration**: < 1 millisecond.
-* **Disk space used**: 0 extra bytes.
-* **Seeding**: Continues without interruption in the background.
+* **Duration**: Less than 1 millisecond.
+* **Extra disk space**: 0 bytes.
+* **Seed status**: Torrents stay active in the background with no interruption.
 
-### How to Verify Hardlinks are Working
+### Check That Hardlinks Work
 
-Run this command inside the host terminal:
+1. Run this command in the host terminal:
 
 ```bash
 ls -l -i ~/media/movies/SomeMovie/SomeMovie.mkv ~/media/downloads/SomeMovie.mkv
 ```
 
-If hardlinked, both files will display the **exact same inode number** (the first number in the output) and a link count of `2`.
+2. Look at the first number in each line of output. If hardlinks work, both files show the same inode number and a link count of `2`.
 
 ---
 
-## ⚙️ Step-by-Step Service Configuration
+## Step-by-Step Service Setup
 
 ### 1. qBittorrent (`http://<ip>:8080`)
 
-1. **First-Time Password**:
-   Recent `linuxserver/qbittorrent` releases generate a random temporary password on initial container boot for security. Retrieve it by checking the logs:
+Recent `linuxserver/qbittorrent` images make a random temporary password when the container starts for the first time.
+
+1. Run this command to get the temporary password from the logs:
 
    ```bash
    docker compose logs qbittorrent | grep -i "temporary password"
    ```
 
-2. Log in with username `admin` and the temporary password.
-3. Immediately change your credentials in **Tools** → **Options** → **Web UI**.
-4. Go to **Tools** → **Options** → **Downloads**:
+2. Open `http://<ip>:8080` and log in with username `admin` and the temporary password.
+3. Go to **Tools** -> **Options** -> **Web UI** and change your password.
+4. Go to **Tools** -> **Options** -> **Downloads** and set these paths:
    * **Default Save Path**: `/data/downloads`
-   * Check **Keep incomplete torrents in**: `/data/downloads/incomplete`
-5. Go to **Connection**:
-   * Port used for incoming connections: `6881`
-6. Go to **Speed**:
-   * Configure global rate limits to 80% of your ISP's max upload speed to prevent network bufferbloat.
+   * **Keep incomplete torrents in**: `/data/downloads/incomplete`
+5. Go to **Connection** and set the port for inbound connections to `6881`.
+6. Go to **Speed** and set global rate limits to 80% of your maximum ISP upload speed to prevent network congestion.
 
-> [!TIP]
-> **Torrent Privacy & VPN**: If you plan to use public torrent trackers, consider routing qBittorrent's traffic through a VPN container (such as Gluetun) to prevent exposing your home IP.
+> [!NOTE]
+> If you use public trackers, route qBittorrent through a VPN container (such as Gluetun) to hide your home IP.
 
 ---
 
-### 2. FlareSolverr (`http://<server-ip>:8191` / `http://flaresolverr:8191`)
+### 2. FlareSolverr (`http://<server-ip>:8191` or `http://flaresolverr:8191`)
 
-* FlareSolverr is a proxy used by Prowlarr to bypass Cloudflare and DDoS-Guard anti-bot challenges on public torrent trackers.
-* Port `8191:8191` is exposed on the host so you can directly ping/test its status endpoint (`http://<server-ip>:8191`) to confirm it is operational. Prowlarr connects to it directly over the internal Docker network at `http://flaresolverr:8191`.
+FlareSolverr acts as a proxy for Prowlarr to solve Cloudflare and DDoS-Guard anti-bot checks on public torrent trackers.
+
+* The host exposes port `8191:8191` so you can open `http://<server-ip>:8191` to check its status.
+* Prowlarr connects directly to FlareSolverr over the internal Docker network at `http://flaresolverr:8191`.
 
 ---
 
 ### 3. Prowlarr (`http://<ip>:9696`)
 
-Prowlarr is your central indexer manager.
+Prowlarr manages all torrent and Usenet indexers from one place.
 
-1. **Add FlareSolverr**:
-   * Navigate to **Settings** → **Indexers**.
-   * Click **+** under **Proxy**.
-   * Select **FlareSolverr**.
-   * Host: `http://flaresolverr:8191`
-   * Name: `FlareSolverr`
-   * Tags: `flaresolverr` (apply this tag to Cloudflare-protected trackers).
-2. **Add Applications (Sonarr & Radarr)**:
-   * Navigate to **Settings** → **Apps**.
-   * Click **+** → **Radarr**:
-     * Prowlarr Server: `http://prowlarr:9696`
-     * Radarr Server: `http://radarr:7878`
-     * API Key: Copy from Radarr (**Settings** → **General** → **API Key**).
-   * Click **+** → **Sonarr**:
-     * Prowlarr Server: `http://prowlarr:9696`
-     * Sonarr Server: `http://sonarr:8989`
-     * API Key: Copy from Sonarr (**Settings** → **General** → **API Key**).
-3. **Add Indexers**:
-   * Navigate to **Indexers** → Click **+ Add Indexer**.
-   * Search for your favorite public or private trackers.
-   * Click **Sync App Profiles** to automatically push them into Sonarr and Radarr.
+1. Add FlareSolverr as an indexer proxy:
+   * Go to **Settings** -> **Indexers**.
+   * Under **Proxy**, click **+** and select **FlareSolverr**.
+   * Set **Host** to `http://flaresolverr:8191`.
+   * Set **Name** to `FlareSolverr`.
+   * Set **Tags** to `flaresolverr` and apply this tag to Cloudflare-protected trackers.
+2. Add Radarr and Sonarr under **Settings** -> **Apps**:
+   * Click **+** and select **Radarr**.
+   * Set **Prowlarr Server** to `http://prowlarr:9696`.
+   * Set **Radarr Server** to `http://radarr:7878`.
+   * Copy the API key from Radarr (**Settings** -> **General** -> **API Key**) and paste it into **API Key**.
+   * Click **+** and select **Sonarr**.
+   * Set **Prowlarr Server** to `http://prowlarr:9696`.
+   * Set **Sonarr Server** to `http://sonarr:8989`.
+   * Copy the API key from Sonarr (**Settings** -> **General** -> **API Key**) and paste it into **API Key**.
+3. Add indexers and sync profiles:
+   * Go to **Indexers** and click **+ Add Indexer**.
+   * Select your public or private trackers.
+   * Click **Sync App Profiles** to send the indexers to Sonarr and Radarr.
 
 ---
 
-### 4. Radarr & Sonarr
+### 4. Radarr and Sonarr
 
-#### Root Folders
+#### Set Root Folders
 
-* **Radarr**: **Settings** → **Media Management** → Root Folders → Add `/data/movies`.
-* **Sonarr**: **Settings** → **Media Management** → Root Folders → Add `/data/tv`.
+1. In Radarr, go to **Settings** -> **Media Management** -> **Root Folders** and add `/data/movies`.
+2. In Sonarr, go to **Settings** -> **Media Management** -> **Root Folders** and add `/data/tv`.
 
-#### Download Client
+#### Add the Download Client
 
-In both Sonarr and Radarr:
+Do these steps in both Sonarr and Radarr:
 
-1. Navigate to **Settings** → **Download Clients** → Click **+** → **qBittorrent**.
-2. Host: `qbittorrent` (Docker internal container name).
-3. Port: `8080`.
-4. Username & Password: Your qBittorrent login.
-5. **Category (CRITICAL)**:
-   * In **Sonarr**: Set Category to `tv`.
-   * In **Radarr**: Set Category to `movies`.
-   *(Setting categories ensures qBittorrent downloads files to `/data/downloads/tv` and `/data/downloads/movies` respectively, preventing Sonarr and Radarr from cross-interfering).*
-6. Click **Test** and **Save**.
+1. Go to **Settings** -> **Download Clients**, click **+**, and select **qBittorrent**.
+2. Set **Host** to `qbittorrent` (the internal Docker container name).
+3. Set **Port** to `8080`.
+4. Enter your qBittorrent username and password.
+5. Set **Category** to `tv` in Sonarr and `movies` in Radarr.
+   * Categories put downloads into `/data/downloads/tv` and `/data/downloads/movies` so Sonarr and Radarr do not interfere with each other.
+6. Click **Test** and then click **Save**.
 
 ---
 
 ### 5. Bazarr (`http://<ip>:6767`)
 
-Bazarr manages subtitles for both movies and TV shows.
+Bazarr manages subtitles for movies and TV shows.
 
-1. Navigate to **Settings** → **Sonarr**:
-   * Address: `sonarr`
-   * Port: `8989`
-   * API Key: Copy from Sonarr.
-2. Navigate to **Settings** → **Radarr**:
-   * Address: `radarr`
-   * Port: `7878`
-   * API Key: Copy from Radarr.
-3. Navigate to **Settings** → **Providers**:
-   * Add OpenSubtitles.com, Subdl, or YIFY Subtitles.
+1. Go to **Settings** -> **Sonarr** and enter these values:
+   * **Address**: `sonarr`
+   * **Port**: `8989`
+   * **API Key**: Your Sonarr API key
+2. Go to **Settings** -> **Radarr** and enter these values:
+   * **Address**: `radarr`
+   * **Port**: `7878`
+   * **API Key**: Your Radarr API key
+3. Go to **Settings** -> **Providers** and add OpenSubtitles.com, Subdl, or YIFY Subtitles.
 
 ---
 
 ### 6. Jellyfin (`http://<ip>:8096`)
 
-#### Libraries
+#### Add Media Libraries
 
-1. Open Jellyfin and complete the initial wizard.
-2. Add Library → **Movies**:
-   * Folder: `/data/movies`
-3. Add Library → **Shows**:
-   * Folder: `/data/tv`
+1. Open Jellyfin and complete the initial setup wizard.
+2. Add a **Movies** library and select `/data/movies` as the folder.
+3. Add a **Shows** library and select `/data/tv` as the folder.
 
 > [!NOTE]
-> `/data/movies` and `/data/tv` are intentionally mounted read-only (`:ro`) in `docker-compose.yml` to prevent Jellyfin from inadvertently altering your media files. Keep library metadata and image extraction options configured to save inside the Jellyfin config directory, not into media folders.
+> The `docker-compose.yml` file mounts `/data/movies` and `/data/tv` as read-only (`:ro`) so Jellyfin cannot change your media files. Save library metadata and images inside the Jellyfin config directory instead of the media folders.
 
-#### Transcoding Cache Isolation
+#### Isolate the Transcode Cache
 
-1. Go to **Dashboard** → **Playback** → **Transcoding**.
-2. **Transcode path**: Set to `/cache`.
-   *(This ensures transcode chunks write to `~/media/cache/jellyfin`, keeping multi-gigabyte temporary files out of your ZFS config backup snapshots!)*
+1. Go to **Dashboard** -> **Playback** -> **Transcoding**.
+2. Set **Transcode path** to `/cache`.
+   * Jellyfin writes temporary transcode files to `~/media/cache/jellyfin` instead of your ZFS config backup snapshots.
 
-#### Hardware Acceleration (GPU Transcoding)
+#### Set Up Hardware Acceleration (GPU Transcode)
 
-If your host server has an Intel CPU with QuickSync or an AMD/NVIDIA GPU:
+If your server has an Intel CPU with QuickSync or an AMD/NVIDIA GPU, do these steps:
 
-1. In `docker-compose.yml`, uncomment the `devices` block under `jellyfin`:
+1. In `docker-compose.yml`, remove the comment markers from the `devices` block under `jellyfin`:
 
    ```yaml
    devices:
      - /dev/dri:/dev/dri # Intel QuickSync / AMD VAAPI
    ```
 
-2. Restart Jellyfin:
+2. Run this command to restart Jellyfin:
 
    ```bash
    docker compose up -d jellyfin
    ```
 
-3. In Jellyfin, go to **Dashboard** → **Playback** → **Transcoding**:
-   * Hardware acceleration: **Intel QuickSync (QSV)** or **VAAPI**.
-   * Enable hardware decoding for H264, HEVC, and VP9.
+3. In Jellyfin, go to **Dashboard** -> **Playback** -> **Transcoding**.
+4. Set **Hardware acceleration** to **Intel QuickSync (QSV)** or **VAAPI**.
+5. Select hardware decode options for H264, HEVC, and VP9.
 
 ---
 
 ### 7. Jellyseerr (`http://<ip>:5055`)
 
-Jellyseerr provides a clean Netflix-style request interface for you and your family.
+Jellyseerr gives users a media request interface for movies and TV shows.
 
 1. Open Jellyseerr and click **Sign in with Jellyfin**.
 2. Enter your Jellyfin URL (`http://jellyfin:8096`) and admin credentials.
-3. Configure Radarr and Sonarr integration:
-   * Radarr: Server `http://radarr:7878`, paste API Key, select Root Folder `/data/movies`.
-   * Sonarr: Server `http://sonarr:8989`, paste API Key, select Root Folder `/data/tv`.
-4. Users can now search for any movie or TV series on Jellyseerr, click **Request**, and the entire stack will find, download, subtitle, and import it automatically!
+3. Connect Radarr with server `http://radarr:7878`, your Radarr API key, and root folder `/data/movies`.
+4. Connect Sonarr with server `http://sonarr:8989`, your Sonarr API key, and root folder `/data/tv`.
+
+Users can now search for movies or TV shows in Jellyseerr and click **Request** to start automatic download and import.

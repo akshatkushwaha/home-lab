@@ -6,7 +6,7 @@ x-common-env: &common-env
 services:
 
   # --------------------------------------------------
-  # REVERSE PROXY & CONTAINER MANAGEMENT
+  # REVERSE PROXY AND CONTAINER MANAGEMENT
   # --------------------------------------------------
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:latest
@@ -14,7 +14,7 @@ services:
     ports:
       - "80:80"      # Public HTTP
       - "81:81"      # Admin Web UI
-      - "443:443"    # Public HTTPS / SSL
+      - "443:443"    # Public HTTPS and SSL
     volumes:
       - ./configs/npm/data:/data
       - ./configs/npm/letsencrypt:/etc/letsencrypt
@@ -32,7 +32,7 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------
-  # SECURITY & PASSWORDS
+  # SECURITY AND PASSWORDS
   # --------------------------------------------------
   vaultwarden:
     image: vaultwarden/server:latest
@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------
-  # PHOTOS & BACKUPS (IMMICH)
+  # PHOTOS AND BACKUPS (IMMICH)
   # --------------------------------------------------
   immich-server:
     image: ghcr.io/immich-app/immich-server:release
@@ -94,7 +94,7 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------
-  # DOCUMENT MANAGEMENT & UTILITIES
+  # DOCUMENT MANAGEMENT AND UTILITIES
   # --------------------------------------------------
   paperless-ngx:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -140,7 +140,7 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------
-  # FILE SYNC & STORAGE (SYNCTHING)
+  # FILE SYNC AND STORAGE (SYNCTHING)
   # --------------------------------------------------
   syncthing:
     image: lscr.io/linuxserver/syncthing:latest
@@ -153,13 +153,13 @@ services:
       - ${STORAGE_DIR:-~/storage}:/storage
     ports:
       - 8384:8384       # Web UI
-      - 22000:22000/tcp # Listening port TCP
-      - 22000:22000/udp # Listening port UDP
+      - 22000:22000/tcp # TCP listen port
+      - 22000:22000/udp # UDP listen port
       - 21027:21027/udp # Discovery port
     restart: unless-stopped
 
   # --------------------------------------------------
-  # MONITORING & HOMEPAGE
+  # MONITORING AND HOMEPAGE
   # --------------------------------------------------
   uptime-kuma:
     image: louislam/uptime-kuma:latest
@@ -185,21 +185,21 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------
-  # MEDIA STREAMING & AUTOMATION (JELLYFIN & *ARR STACK)
+  # MEDIA STREAMING AND AUTOMATION (JELLYFIN AND *ARR STACK)
   # --------------------------------------------------
-  # ZFS Snapshot & Storage Architecture:
-  # 1. Configs & Databases:
-  #    ./configs/<service> -> ZFS config dataset (tank/appdata).
-  #    Snapshots are lightweight (MBs/GBs), fast, and safely replicated offsite.
-  # 2. Bulk Media & Downloads:
-  #    ${MEDIA_DIR:-~/media} -> Separate ZFS media dataset (tank/media).
-  #    EXCLUDED from routine config backup snapshots.
-  # 3. Jellyfin & Immich Cache / Transcode Isolation:
-  #    ${MEDIA_DIR:-~/media}/cache/...
-  #    Keeps multi-GB transcode chunks and ML models OUT of ./configs so snapshots don't bloat.
+  # ZFS Snapshot and Storage Architecture:
+  # 1. Configs and Databases:
+  #    ./configs/<service> maps to the ZFS config dataset (tank/appdata).
+  #    Snapshots stay small, run fast, and replicate offsite.
+  # 2. Bulk Media and Downloads:
+  #    ${MEDIA_DIR:-~/media} maps to a separate ZFS media dataset (tank/media).
+  #    Routine config backup snapshots do not include this dataset.
+  # 3. Jellyfin and Immich Cache Isolation:
+  #    ${MEDIA_DIR:-~/media}/cache/... keeps large transcode chunks and ML models
+  #    out of ./configs so snapshots stay small.
   # 4. TRaSH Guides Hardlink Structure:
-  #    Single shared root (${MEDIA_DIR:-~/media}:/data) across qBittorrent, Sonarr, and Radarr
-  #    enables instant, zero-space atomic hardlinks from downloads to library folders.
+  #    One shared root (${MEDIA_DIR:-~/media}:/data) across qBittorrent, Sonarr,
+  #    and Radarr lets the kernel make instant atomic hardlinks with zero extra space.
   # --------------------------------------------------
 
   flaresolverr:
@@ -222,7 +222,7 @@ services:
       - ./configs/qbittorrent:/config
       - ${MEDIA_DIR:-~/media}:/data
     ports:
-      - "8080:8080" # WebUI
+      - "8080:8080" # Web UI
       - 6881:6881
       - 6881:6881/udp
     restart: unless-stopped
@@ -288,7 +288,7 @@ services:
     ports:
       - "8096:8096"
     # devices:
-    #   - /dev/dri:/dev/dri # Intel QuickSync / VAAPI hardware transcoding
+    #   - /dev/dri:/dev/dri # Intel QuickSync and VAAPI hardware transcode
     restart: unless-stopped
 
   jellyseerr:

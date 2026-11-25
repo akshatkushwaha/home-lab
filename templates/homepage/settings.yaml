@@ -4,15 +4,15 @@ theme: dark
 color: slate
 headerStyle: clean
 layout:
-  Infrastructure & Management:
+  Infrastructure and Management:
     style: row
     columns: 3
-  Security & Documents:
+  Security and Documents:
     style: row
     columns: 4
-  Media & Streaming:
+  Media and Streaming:
     style: row
     columns: 2
-  Automation & Downloads:
+  Automation and Downloads:
     style: row
     columns: 5

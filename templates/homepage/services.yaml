@@ -1,13 +1,13 @@
 ---
 # Homepage Services Configuration
-# Grouped by function for clean dashboard visualization
+# Services are grouped by function for the dashboard layout.
 
-- Infrastructure & Management:
+- Infrastructure and Management:
     - Nginx Proxy Manager:
         icon: nginx-proxy-manager.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:81"
-        description: Reverse Proxy & SSL Termination
-        # To enable the NPM stats widget, provide your NPM admin credentials:
+        description: Reverse Proxy and SSL Termination
+        # To turn on the NPM stats widget, enter your NPM admin credentials:
         # widget:
         #   type: npm
         #   url: "http://nginx-proxy-manager:81"
@@ -17,14 +17,14 @@
     - Portainer:
         icon: portainer.png
         href: "https://{{HOMEPAGE_VAR_SERVER_IP}}:9443"
-        description: Docker Container Management
+        description: Docker Container Manager
 
     - Uptime Kuma:
         icon: uptime-kuma.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:3001"
-        description: Service Monitoring & Status
+        description: Service Monitor and Status
 
-- Security & Documents:
+- Security and Documents:
     - Vaultwarden:
         icon: vaultwarden.png
         href: "{{HOMEPAGE_VAR_VAULT_URL}}"
@@ -33,35 +33,35 @@
     - Immich:
         icon: immich.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:2283"
-        description: Photo & Video Backup
+        description: Photo and Video Backup
 
     - Paperless-ngx:
         icon: paperless-ngx.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8777"
-        description: Document Archiving & OCR
+        description: Document Archive and OCR
 
     - Stirling PDF:
         icon: stirling-pdf.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8085"
-        description: PDF Manipulation Tools
+        description: PDF Tools
 
     - Syncthing:
         icon: syncthing.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8384"
-        description: File Sync & Offline Drive
+        description: File Sync and Offline Drive
 
-- Media & Streaming:
+- Media and Streaming:
     - Jellyfin:
         icon: jellyfin.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8096"
-        description: Media Streaming Server
+        description: Media Server
 
     - Jellyseerr:
         icon: jellyseerr.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:5055"
-        description: Movie & TV Requests
+        description: Movie and TV Requests
 
-- Automation & Downloads:
+- Automation and Downloads:
     - qBittorrent:
         icon: qbittorrent.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8080"
@@ -70,19 +70,19 @@
     - Radarr:
         icon: radarr.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:7878"
-        description: Movie Automation
+        description: Movie Manager
 
     - Sonarr:
         icon: sonarr.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8989"
-        description: TV Show Automation
+        description: TV Show Manager
 
     - Prowlarr:
         icon: prowlarr.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:9696"
-        description: Indexer Management
+        description: Indexer Manager
 
     - Bazarr:
         icon: bazarr.png
         href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:6767"
-        description: Subtitle Management
+        description: Subtitle Manager
