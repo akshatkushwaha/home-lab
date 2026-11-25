@@ -3,6 +3,14 @@ x-common-env: &common-env
   PGID: ${PGID:-1000}
   TZ: ${TZ:-UTC}
 
+networks:
+  private_net:
+    driver: bridge
+  shared_net:
+    driver: bridge
+  media_bridge:
+    driver: bridge
+
 services:
 
   # --------------------------------------------------
@@ -12,23 +20,41 @@ services:
     image: jc21/nginx-proxy-manager:latest
     container_name: nginx-proxy-manager
     ports:
-      - "80:80"      # Public HTTP
-      - "81:81"      # Admin Web UI
-      - "443:443"    # Public HTTPS and SSL
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:80:80"     # Private HTTP
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:81:81"     # Private Admin Web UI
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:443:443"   # Private HTTPS and SSL
     volumes:
       - ./configs/npm/data:/data
       - ./configs/npm/letsencrypt:/etc/letsencrypt
+    networks:
+      - private_net
+    restart: unless-stopped
+
+  npm-shared:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: npm-shared
+    ports:
+      - "${SHARED_IP:?Set SHARED_IP in .env}:80:80"       # Shared HTTP
+      - "${SHARED_IP:?Set SHARED_IP in .env}:443:443"     # Shared HTTPS and SSL
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8181:81"   # Admin Web UI on Private IP only
+    volumes:
+      - ./configs/npm-shared/data:/data
+      - ./configs/npm-shared/letsencrypt:/etc/letsencrypt
+    networks:
+      - shared_net
     restart: unless-stopped
 
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
     ports:
-      - 8000:8000
-      - 9443:9443
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8000:8000"
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:9443:9443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./configs/portainer/data:/data
+    networks:
+      - private_net
     restart: unless-stopped
 
   # --------------------------------------------------
@@ -43,6 +69,8 @@ services:
       TZ: ${TZ:-UTC}
     volumes:
       - ./configs/vaultwarden/data:/data
+    networks:
+      - shared_net
     restart: unless-stopped
 
   # --------------------------------------------------
@@ -52,7 +80,7 @@ services:
     image: ghcr.io/immich-app/immich-server:release
     container_name: immich-server
     ports:
-      - 2283:2283
+      - "${SHARED_IP:?Set SHARED_IP in .env}:2283:2283"
     environment:
       DB_HOSTNAME: immich-database
       DB_USERNAME: postgres
@@ -66,6 +94,8 @@ services:
       - immich-database
       - immich-redis
       - immich-machine-learning
+    networks:
+      - shared_net
     restart: unless-stopped
 
   immich-machine-learning:
@@ -73,11 +103,15 @@ services:
     container_name: immich-machine-learning
     volumes:
       - ${MEDIA_DIR:-~/media}/cache/immich-ml:/cache
+    networks:
+      - shared_net
     restart: unless-stopped
 
   immich-redis:
     image: redis:7-alpine
     container_name: immich-redis
+    networks:
+      - shared_net
     restart: unless-stopped
 
   immich-database:
@@ -91,6 +125,8 @@ services:
     volumes:
       - ./configs/immich/postgres:/var/lib/postgresql/data
     shm_size: 128mb
+    networks:
+      - shared_net
     restart: unless-stopped
 
   # --------------------------------------------------
@@ -116,14 +152,18 @@ services:
       - ./configs/paperless/export:/usr/src/paperless/export
       - ./configs/paperless/consume:/usr/src/paperless/consume
     ports:
-      - 8777:8000
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8777:8000"
     depends_on:
       - paperless-redis
+    networks:
+      - private_net
     restart: unless-stopped
 
   paperless-redis:
     image: redis:7-alpine
     container_name: paperless-redis
+    networks:
+      - private_net
     restart: unless-stopped
 
   stirling-pdf:
@@ -133,10 +173,12 @@ services:
       - DOCKER_ENABLE_SECURITY=${STIRLING_ENABLE_SECURITY:-false}
       - TZ=${TZ:-UTC}
     ports:
-      - 8085:8080
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8085:8080"
     volumes:
       - ./configs/stirling-pdf/trainingData:/usr/share/tessdata
       - ./configs/stirling-pdf/extraConfigs:/configs
+    networks:
+      - private_net
     restart: unless-stopped
 
   # --------------------------------------------------
@@ -152,10 +194,12 @@ services:
       - ./configs/syncthing/config:/config
       - ${STORAGE_DIR:-~/storage}:/storage
     ports:
-      - 8384:8384       # Web UI
-      - 22000:22000/tcp # TCP listen port
-      - 22000:22000/udp # UDP listen port
-      - 21027:21027/udp # Discovery port
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8384:8384"       # Web UI
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:22000:22000/tcp" # TCP listen port
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:22000:22000/udp" # UDP listen port
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:21027:21027/udp" # Discovery port
+    networks:
+      - private_net
     restart: unless-stopped
 
   # --------------------------------------------------
@@ -167,7 +211,9 @@ services:
     volumes:
       - ./configs/uptime-kuma/data:/app/data
     ports:
-      - 3001:3001
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:3001:3001"
+    networks:
+      - private_net
     restart: unless-stopped
 
   homepage:
@@ -175,13 +221,16 @@ services:
     container_name: homepage
     environment:
       - TZ=${TZ:-UTC}
-      - HOMEPAGE_VAR_SERVER_IP=${SERVER_IP:-127.0.0.1}
+      - HOMEPAGE_VAR_SERVER_IP=${PRIVATE_IP:-127.0.0.1}
+      - HOMEPAGE_VAR_SHARED_IP=${SHARED_IP:-127.0.0.1}
       - HOMEPAGE_VAR_VAULT_URL=${VAULTWARDEN_DOMAIN:-http://localhost}
     volumes:
       - ./configs/homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - 3000:3000
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:3000:3000"
+    networks:
+      - private_net
     restart: unless-stopped
 
   # --------------------------------------------------
@@ -200,6 +249,10 @@ services:
   # 4. TRaSH Guides Hardlink Structure:
   #    One shared root (${MEDIA_DIR:-~/media}:/data) across qBittorrent, Sonarr,
   #    and Radarr lets the kernel make instant atomic hardlinks with zero extra space.
+  # 5. Network Isolation:
+  #    Private admin containers run on private_net and map to PRIVATE_IP.
+  #    Shared media containers run on shared_net and map to SHARED_IP.
+  #    media_bridge connects only Jellyseerr to Radarr and Sonarr.
   # --------------------------------------------------
 
   flaresolverr:
@@ -209,7 +262,9 @@ services:
       LOG_LEVEL: info
       TZ: ${TZ:-UTC}
     ports:
-      - "8191:8191"
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8191:8191"
+    networks:
+      - private_net
     restart: unless-stopped
 
   qbittorrent:
@@ -222,9 +277,11 @@ services:
       - ./configs/qbittorrent:/config
       - ${MEDIA_DIR:-~/media}:/data
     ports:
-      - "8080:8080" # Web UI
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8080:8080" # Web UI
       - 6881:6881
       - 6881:6881/udp
+    networks:
+      - private_net
     restart: unless-stopped
 
   prowlarr:
@@ -235,7 +292,9 @@ services:
     volumes:
       - ./configs/prowlarr:/config
     ports:
-      - "9696:9696"
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:9696:9696"
+    networks:
+      - private_net
     restart: unless-stopped
 
   sonarr:
@@ -247,7 +306,10 @@ services:
       - ./configs/sonarr:/config
       - ${MEDIA_DIR:-~/media}:/data
     ports:
-      - "8989:8989"
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8989:8989"
+    networks:
+      - private_net
+      - media_bridge
     restart: unless-stopped
 
   radarr:
@@ -259,7 +321,10 @@ services:
       - ./configs/radarr:/config
       - ${MEDIA_DIR:-~/media}:/data
     ports:
-      - "7878:7878"
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:7878:7878"
+    networks:
+      - private_net
+      - media_bridge
     restart: unless-stopped
 
   bazarr:
@@ -271,7 +336,9 @@ services:
       - ./configs/bazarr:/config
       - ${MEDIA_DIR:-~/media}:/data
     ports:
-      - "6767:6767"
+      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:6767:6767"
+    networks:
+      - private_net
     restart: unless-stopped
 
   jellyfin:
@@ -286,9 +353,11 @@ services:
       - ${MEDIA_DIR:-~/media}/movies:/data/movies:ro
       - ${MEDIA_DIR:-~/media}/tv:/data/tv:ro
     ports:
-      - "8096:8096"
+      - "${SHARED_IP:?Set SHARED_IP in .env}:8096:8096"
     # devices:
     #   - /dev/dri:/dev/dri # Intel QuickSync and VAAPI hardware transcode
+    networks:
+      - shared_net
     restart: unless-stopped
 
   jellyseerr:
@@ -299,5 +368,8 @@ services:
     volumes:
       - ./configs/jellyseerr:/app/config
     ports:
-      - "5055:5055"
+      - "${SHARED_IP:?Set SHARED_IP in .env}:5055:5055"
+    networks:
+      - shared_net
+      - media_bridge
     restart: unless-stopped

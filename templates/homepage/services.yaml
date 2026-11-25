@@ -32,7 +32,7 @@
 
     - Immich:
         icon: immich.png
-        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:2283"
+        href: "http://{{HOMEPAGE_VAR_SHARED_IP}}:2283"
         description: Photo and Video Backup
 
     - Paperless-ngx:
@@ -53,12 +53,12 @@
 - Media and Streaming:
     - Jellyfin:
         icon: jellyfin.png
-        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:8096"
+        href: "http://{{HOMEPAGE_VAR_SHARED_IP}}:8096"
         description: Media Server
 
     - Jellyseerr:
         icon: jellyseerr.png
-        href: "http://{{HOMEPAGE_VAR_SERVER_IP}}:5055"
+        href: "http://{{HOMEPAGE_VAR_SHARED_IP}}:5055"
         description: Movie and TV Requests
 
 - Automation and Downloads:
