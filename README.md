@@ -26,7 +26,7 @@ flowchart TD
             NPM_Shared_UI["NPM Shared Admin (:8181)"]
             Portainer["Portainer CE (:8000, :9443)"]
             SMB["Native Samba Server (:445)"]
-            PrivCore["Paperless-ngx, Stirling-PDF, Syncthing, Uptime Kuma, Homepage"]
+            PrivCore["Stirling-PDF and Syncthing"]
             ArrStack["Radarr, Sonarr, Bazarr, Prowlarr, FlareSolverr, qBittorrent"]
         end
 
@@ -39,11 +39,15 @@ flowchart TD
         end
     end
 
-    subgraph Storage ["ZFS Storage Pool (tank)"]
-        DS_Appdata["tank/appdata (./configs)\nDatabases and Configs\nHourly Snapshots\nOffsite Replication"]
-        DS_Photos["tank/photos (~/photos)\nImmich Photos and Videos\nDaily Snapshots\nOffsite Replication"]
-        DS_Storage["tank/storage (~/storage)\nSMB and Syncthing Drive\nDaily Snapshots\nOffsite Replication"]
-        DS_Media["tank/media (~/media)\nMovies, TV, Downloads, Cache\nNo Backup Snapshots"]
+    subgraph Storage_SSD ["ZFS SSD Mirror Pool (fast)"]
+        DS_Appdata["fast/appdata (./configs)\nDatabases and Configs\nHourly Snapshots\nOffsite Replication"]
+        DS_Photos["fast/photos (~/photos)\nImmich Photos and Videos\nDaily Snapshots\nOffsite Replication"]
+        DS_Storage["fast/storage (~/storage)\nSMB and Syncthing Drive\nDaily Snapshots\nOffsite Replication"]
+        DS_Cache["fast/cache (~/cache)\nJellyfin and Immich ML Cache\nNo Backup Snapshots"]
+    end
+
+    subgraph Storage_HDD ["ZFS HDD Pool (tank, Unmirrored)"]
+        DS_Media["tank/media (~/media)\nMovies, TV, Downloads\nNo Backup Snapshots"]
     end
 
     Owner -->|NetBird Full LAN| PiNetBird
@@ -63,7 +67,9 @@ flowchart TD
     ArrStack --> DS_Media
     Immich --> DS_Photos
     Immich --> DS_Appdata
+    Immich --> DS_Cache
     Jellyfin --> DS_Media
+    Jellyfin --> DS_Cache
 ```
 
 ---
@@ -81,10 +87,7 @@ flowchart TD
 | | [Immich](https://immich.app) | `SHARED_IP` | `2283` | `http://<shared-ip>:2283` | Self-hosted photo and video backup |
 | | [Jellyfin](https://jellyfin.org) | `SHARED_IP` | `8096` | `http://<shared-ip>:8096` | Open-source media server |
 | | [Jellyseerr](https://github.com/Fallenbagel/jellyseerr) | `SHARED_IP` | `5055` | `http://<shared-ip>:5055` | Media request interface |
-| **Private Documents** | [Paperless-ngx](https://docs.paperless-ngx.com) | `PRIVATE_IP` | `8777` | `http://<private-ip>:8777` | Document archive and OCR system |
-| | [Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF) | `PRIVATE_IP` | `8085` | `http://<private-ip>:8085` | Local PDF tool suite |
-| **Monitoring** | [Uptime Kuma](https://github.com/louislam/uptime-kuma) | `PRIVATE_IP` | `3001` | `http://<private-ip>:3001` | Service status monitor |
-| | [Homepage](https://gethomepage.dev) | `PRIVATE_IP` | `3000` | `http://<private-ip>:3000` | Application dashboard |
+| **Private Utilities** | [Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF) | `PRIVATE_IP` | `8085` | `http://<private-ip>:8085` | Local PDF tool suite |
 | **Media Automation** | [Radarr](https://radarr.video) | `PRIVATE_IP` | `7878` | `http://<private-ip>:7878` | Movie collection manager |
 | | [Sonarr](https://sonarr.tv) | `PRIVATE_IP` | `8989` | `http://<private-ip>:8989` | TV series collection manager |
 | | [Bazarr](https://www.bazarr.media) | `PRIVATE_IP` | `6767` | `http://<private-ip>:6767` | Subtitle manager for Sonarr and Radarr |
@@ -96,32 +99,35 @@ flowchart TD
 
 ## Storage Architecture and ZFS Dataset Layout
 
-The storage layout separates critical application state, personal photos, personal documents, and disposable media into four ZFS datasets:
+The storage layout puts critical state, photos, documents, and caches on a mirrored SSD pool (`fast`), and puts bulk media on a single HDD (`tank`):
 
 ```
-ZFS Storage Pool (tank)
-├── tank/appdata (Mounted to ./configs inside ~/home-lab)
+ZFS SSD Mirror Pool (fast)
+├── fast/appdata (Mounted to ./configs inside ~/home-lab)
 │   ├── Settings, SQLite databases (Vaultwarden, Sonarr, Radarr, Prowlarr)
 │   ├── Immich PostgreSQL database & pgvector data
-│   ├── Paperless SQLite metadata & NPM certificates
-│   └──> SNAPSHOT THIS! (Lightweight, ~5-20 GB, hourly snapshots, replicated offsite)
+│   ├── NPM certificates
+│   └──> SNAPSHOT THIS! (Lightweight, ~10-40 GB, hourly snapshots, replicated offsite)
 │
-├── tank/photos (Mounted to ~/photos)
+├── fast/photos (Mounted to ~/photos)
 │   ├── Immich photo and video libraries (family memories)
 │   └──> SNAPSHOT & BACKUP THIS! (Daily snapshots, replicated offsite)
 │
-├── tank/storage (Mounted to ~/storage)
+├── fast/storage (Mounted to ~/storage)
 │   ├── Native Samba SMB share (Live network drive)
 │   ├── Syncthing storage folder (Offline laptop sync)
 │   └──> SNAPSHOT & BACKUP THIS! (Daily snapshots, replicated offsite)
 │
+└── fast/cache (Mounted to ~/cache)
+    ├── jellyfin/    (Transcoding chunks & image cache)
+    └── immich-ml/   (Downloaded machine learning model cache)
+    └──> EXCLUDED FROM BACKUP SNAPSHOTS (Disposable SSD cache)
+
+ZFS HDD Pool (tank - Single Drive, No Mirror)
 └── tank/media (Mounted to ~/media)
-    ├── downloads/       (qBittorrent active & completed downloads)
-    ├── movies/          (Curated movie library)
-    ├── tv/              (Curated TV show library)
-    └── cache/
-        ├── jellyfin/    (Transcoding chunks & image cache)
-        └── immich-ml/   (Downloaded machine learning model cache)
+    ├── downloads/   (qBittorrent active & completed downloads)
+    ├── movies/      (Curated movie library)
+    └── tv/          (Curated TV show library)
     └──> EXCLUDED FROM BACKUP SNAPSHOTS (Multi-terabyte disposable media)
 ```
 
@@ -215,7 +221,7 @@ ip -4 addr show <interface>
 
 ---
 
-### Step 3: Make the ZFS Pool
+### Step 3: Make the ZFS Pools and Cap ARC Memory
 
 1. List your storage drives by their persistent disk IDs so drive names stay consistent after a reboot:
 
@@ -223,19 +229,31 @@ ip -4 addr show <interface>
 ls -l /dev/disk/by-id/
 ```
 
-2. Make the ZFS storage pool named `tank`:
+2. Make the mirrored SSD pool named `fast` for `appdata`, `photos`, `storage`, and `cache`:
 
 ```bash
-# For a two-drive mirror setup (recommended):
-sudo zpool create -o ashift=12 -O compression=lz4 tank mirror \
-    /dev/disk/by-id/<drive-1-id> \
-    /dev/disk/by-id/<drive-2-id>
+sudo zpool create -o ashift=12 -O compression=lz4 fast mirror \
+    /dev/disk/by-id/<ssd-1-id> \
+    /dev/disk/by-id/<ssd-2-id>
+```
 
-# For a single-drive setup:
-# sudo zpool create -o ashift=12 -O compression=lz4 tank /dev/disk/by-id/<drive-id>
+3. Make the single-drive HDD pool named `tank` for bulk `media`:
 
-# Check pool status
-sudo zpool status tank
+```bash
+sudo zpool create -o ashift=12 -O compression=lz4 tank /dev/disk/by-id/<hdd-1-id>
+```
+
+4. On a 16 GB RAM host, limit ZFS ARC to 4 GB so Immich ML and containers keep free memory:
+
+```bash
+echo "options zfs zfs_arc_max=4294967296" | sudo tee /etc/modprobe.d/zfs.conf
+sudo update-initramfs -u
+```
+
+5. Check the status of both pools:
+
+```bash
+sudo zpool status fast tank
 ```
 
 ---
@@ -253,30 +271,30 @@ cd ~/home-lab
 
 ### Step 5: Prepare Storage Datasets and Directories
 
-1. Run these commands to make the ZFS datasets, media subdirectories, and user permissions:
+1. Run these commands to make the ZFS datasets, directories, and user permissions:
 
 ```bash
-# 1. Appdata dataset (databases and container state: atime off, system attributes on)
-sudo zfs create -o compression=lz4 -o atime=off -o xattr=sa -o mountpoint=/home/$USER/home-lab/configs tank/appdata
+# 1. Appdata dataset on SSD (databases and container state: atime off, system attributes on)
+sudo zfs create -o compression=lz4 -o atime=off -o xattr=sa -o mountpoint=/home/$USER/home-lab/configs fast/appdata
 
-# 2. Photos dataset (Immich photo and video libraries: backed up)
-sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/photos tank/photos
+# 2. Photos dataset on SSD (Immich photo and video libraries: backed up)
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/photos fast/photos
 
-# 3. Personal storage dataset (SMB share and Syncthing offline drive: backed up)
-sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/storage tank/storage
+# 3. Personal storage dataset on SSD (SMB share and Syncthing offline drive: backed up)
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/storage fast/storage
 
-# 4. Bulk media dataset (1M recordsize for video streams: not backed up)
+# 4. Cache dataset on SSD (transcodes and ML models: not backed up)
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/cache fast/cache
+
+# 5. Bulk media dataset on HDD (1M recordsize for video streams: not backed up)
 sudo zfs create -o compression=lz4 -o recordsize=1M -o mountpoint=/home/$USER/media tank/media
 
-# 5. Make media subdirectories and isolated transcode caches
-mkdir -p ~/media/downloads
-mkdir -p ~/media/movies
-mkdir -p ~/media/tv
-mkdir -p ~/media/cache/jellyfin
-mkdir -p ~/media/cache/immich-ml
+# 6. Make cache and media subdirectories
+mkdir -p ~/cache/jellyfin ~/cache/immich-ml
+mkdir -p ~/media/downloads ~/media/movies ~/media/tv
 
-# 6. Give ownership of all datasets to your user
-sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage /home/$USER/media
+# 7. Give ownership of all datasets to your user
+sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage /home/$USER/cache /home/$USER/media
 ```
 
 ---
@@ -343,7 +361,7 @@ sudo systemctl restart smbd
 
 ---
 
-### Step 7: Set Up Environment Variables and Dashboard Templates
+### Step 7: Set Up Environment Variables
 
 1. Copy the environment template file and restrict its permissions:
 
@@ -363,16 +381,8 @@ nano .env
    * `PRIVATE_IP`: Private LAN IP address of your server (for example, `192.168.0.100`).
    * `SHARED_IP`: Shared LAN IP address of your server (for example, `192.168.0.101`).
    * `IMMICH_DB_PASSWORD`: Random password made with `openssl rand -hex 16`.
-   * `PAPERLESS_SECRET_KEY`: Random secret key made with `openssl rand -hex 16`.
    * `VAULTWARDEN_DOMAIN`: Public URL (for example, `https://vault.madcow.fyi/`).
    * `VAULTWARDEN_SIGNUPS_ALLOWED`: Set to `true` only to register your admin account, then set back to `false`.
-
-4. Copy the starter templates for Homepage into the config directory:
-
-```bash
-mkdir -p ./configs/homepage/config
-cp -r templates/homepage/* ./configs/homepage/config/
-```
 
 ---
 
@@ -407,7 +417,6 @@ docker compose ps
 3. Add a wildcard Let's Encrypt certificate for `*.madcow.fyi` and `madcow.fyi` with **Use a DNS Challenge** and **Cloudflare**.
 4. Add proxy hosts **only for private services** on `private_net`:
    * `portainer.madcow.fyi` -> `portainer` port `9000` (or HTTPS port `9443`)
-   * `paperless.madcow.fyi` -> `paperless-ngx` port `8000`
    * `sonarr.madcow.fyi` -> `sonarr` port `8989`
    * `radarr.madcow.fyi` -> `radarr` port `7878`
    * `prowlarr.madcow.fyi` -> `prowlarr` port `9696`
@@ -441,13 +450,7 @@ The `npm-shared` admin interface binds only to `PRIVATE_IP` (`:8181`), while its
      ```
 2. **Immich**:
    * Open `http://<shared-ip>:2283` and make the administrator account.
-   * Immich saves uploaded photos in `~/photos` (`tank/photos`).
-3. **Paperless-ngx**:
-   * Open `http://<private-ip>:8777`.
-   * Run this command to make an administrator user:
-     ```bash
-     docker compose exec -it paperless-ngx python3 manage.py createsuperuser
-     ```
+   * Immich saves uploaded photos in `~/photos` (`fast/photos`).
 
 ---
 
@@ -486,9 +489,9 @@ This Raspberry Pi keeps home DNS online at all times, even during server mainten
    curl -fsSL https://pkgs.netbird.io/install.sh | sh
    sudo netbird up
    ```
-4. In NetBird Cloud, add `192.168.0.0/24` (full LAN for owner devices) and `192.168.0.101/32` (`SHARED_IP` for friends and family) under **Networks**.
-5. Select the Pi as the Routing Peer for both network resources.
-6. Set the NetBird IP address of the Pi as the DNS nameserver.
+4. In NetBird Cloud, add `192.168.0.100/32` (`Private Services`), `192.168.0.101/32` (`Shared Services`), and `192.168.0.0/24` (`Complete LAN`).
+5. Select the `Raspberry` peer as the Routing Peer for all three network resources.
+6. Set the NetBird IP address of the Pi as the DNS nameserver for `Admin` and `Friends and Family`.
 7. Map shared subdomains to `SHARED_IP` and private subdomains to `PRIVATE_IP` in Pi-hole Local DNS.
 
 For detailed instructions, see [docs/pihole-netbird-guide.md](docs/pihole-netbird-guide.md).
@@ -497,15 +500,15 @@ For detailed instructions, see [docs/pihole-netbird-guide.md](docs/pihole-netbir
 
 ### Step 13: Take ZFS Snapshots and Prepare Backups
 
-Container state resides in `tank/appdata`, photos reside in `tank/photos`, and personal documents reside in `tank/storage`.
+Container state resides in `fast/appdata`, photos reside in `fast/photos`, and personal documents reside in `fast/storage`.
 
 1. Run these commands to take manual snapshots and list all snapshots:
 
 ```bash
 # Take manual snapshots of critical datasets
-sudo zfs snapshot tank/appdata@manual-$(date +%F)
-sudo zfs snapshot tank/photos@manual-$(date +%F)
-sudo zfs snapshot tank/storage@manual-$(date +%F)
+sudo zfs snapshot fast/appdata@manual-$(date +%F)
+sudo zfs snapshot fast/photos@manual-$(date +%F)
+sudo zfs snapshot fast/storage@manual-$(date +%F)
 
 # List snapshots
 sudo zfs list -t snapshot

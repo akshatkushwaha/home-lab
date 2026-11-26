@@ -53,22 +53,6 @@ Bare-metal hardware hosts all services. Docker Compose runs the containers, a ZF
     </a>
   </div>
 
-  <!-- Paperless-ngx -->
-  <div style="border: 1px solid #e1e4e8; border-radius: 8px; padding: 1.25rem; background: rgba(0, 0, 0, 0.02); display: flex; flex-direction: column; justify-content: space-between;">
-    <div>
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-        <h3 style="margin: 0; font-size: 1.2rem;">Paperless-ngx</h3>
-        <span style="font-size: 0.75rem; background: #e8f5e9; color: #1b5e20; padding: 2px 8px; border-radius: 12px; font-weight: 600;">Documents</span>
-      </div>
-      <p style="font-size: 0.9rem; color: #586069; margin: 0.5rem 0 1rem 0;">
-        Automatic document archive with full-text search, OCR, tags, and sender indexes.
-      </p>
-    </div>
-    <a href="https://paperless.madcow.fyi" target="_blank" style="display: inline-block; text-align: center; background: #0366d6; color: #ffffff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
-      Open Documents &rarr;
-    </a>
-  </div>
-
   <!-- Jellyfin -->
   <div style="border: 1px solid #e1e4e8; border-radius: 8px; padding: 1.25rem; background: rgba(0, 0, 0, 0.02); display: flex; flex-direction: column; justify-content: space-between;">
     <div>
@@ -165,38 +149,6 @@ Bare-metal hardware hosts all services. Docker Compose runs the containers, a ZF
     </a>
   </div>
 
-  <!-- Uptime Kuma -->
-  <div style="border: 1px solid #e1e4e8; border-radius: 8px; padding: 1.25rem; background: rgba(0, 0, 0, 0.02); display: flex; flex-direction: column; justify-content: space-between;">
-    <div>
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-        <h3 style="margin: 0; font-size: 1.2rem;">Uptime Kuma</h3>
-        <span style="font-size: 0.75rem; background: #e8f5e9; color: #1b5e20; padding: 2px 8px; border-radius: 12px; font-weight: 600;">Monitor</span>
-      </div>
-      <p style="font-size: 0.9rem; color: #586069; margin: 0.5rem 0 1rem 0;">
-        Service uptime monitor with response time metrics and status alerts.
-      </p>
-    </div>
-    <a href="https://status.madcow.fyi" target="_blank" style="display: inline-block; text-align: center; background: #0366d6; color: #ffffff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
-      Status Page &rarr;
-    </a>
-  </div>
-
-  <!-- Homepage Dashboard -->
-  <div style="border: 1px solid #e1e4e8; border-radius: 8px; padding: 1.25rem; background: rgba(0, 0, 0, 0.02); display: flex; flex-direction: column; justify-content: space-between;">
-    <div>
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-        <h3 style="margin: 0; font-size: 1.2rem;">Homepage</h3>
-        <span style="font-size: 0.75rem; background: #fce4ec; color: #880e4f; padding: 2px 8px; border-radius: 12px; font-weight: 600;">Dashboard</span>
-      </div>
-      <p style="font-size: 0.9rem; color: #586069; margin: 0.5rem 0 1rem 0;">
-        Central homelab dashboard with live metrics, system status, and service links.
-      </p>
-    </div>
-    <a href="https://dash.madcow.fyi" target="_blank" style="display: inline-block; text-align: center; background: #0366d6; color: #ffffff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
-      Homelab Dashboard &rarr;
-    </a>
-  </div>
-
 </div>
 
 ---
@@ -217,7 +169,7 @@ The media pipeline uses TRaSH Guides atomic hardlinks for instant file organizat
 
 ## Infrastructure Highlights
 
-- **ZFS Dataset Isolation**: Separate ZFS datasets (`tank/appdata`, `tank/photos`, `tank/storage`, `tank/media`) use Sanoid for automatic snapshots and Syncoid for offsite backup.
+- **ZFS Dataset Isolation**: Separate SSD (`fast/appdata`, `fast/photos`, `fast/storage`, `fast/cache`) and HDD (`tank/media`) datasets use Sanoid snapshots and Syncoid backup.
 - **Zero-Trust Remote Access**: The router keeps all inbound ports closed, and a standalone Raspberry Pi runs NetBird and Pi-hole DNS for remote access.
 - **Unified Reverse Proxy**: Nginx Proxy Manager gets wildcard Let's Encrypt certificates through DNS-01 validation.
 
