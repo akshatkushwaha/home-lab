@@ -98,7 +98,7 @@ sudo netbird up
 
 ## Step 4: Set Up Groups, Network Routes, and Policies
 
-NetBird enforces access rules between client groups and network resources. Use two network resources so friends and family reach only `SHARED_IP` (`192.168.0.101`).
+NetBird enforces access rules between client groups and network resources. Use separate network resources so `Friends and Family` reaches only `SHARED_IP` (`192.168.0.101`).
 
 ### A. Find Your LAN Subnet
 
@@ -113,43 +113,51 @@ ip route | grep default
 
 2. Open the [NetBird Cloud Dashboard](https://app.netbird.io) and go to **Peers**.
 3. Find your `pihole` peer and note its **NetBird IP (`100.x.y.z`)**.
-4. Go to **Access Control** -> **Groups** and make these groups:
-   * `homelab-routers`: Assign the `pihole` peer to this group.
-   * `owner-devices`: Assign your personal laptop, phone, and workstation to this group.
-   * `friends-family`: Assign devices for friends and family to this group.
-   * `net-lan-full`: Target group for your full LAN resource.
-   * `net-shared-services`: Target group for your shared server IP resource.
+4. Go to **Access Control** -> **Groups** and make these six groups:
+   * `Admin`: Assign your personal laptop, phone, and workstation to this group.
+   * `Raspberry`: Assign your Raspberry Pi (`pihole`) peer to this group.
+   * `Friends and Family`: Assign devices for friends and family to this group.
+   * `Private Services`: Target group for `192.168.0.100/32` (`PRIVATE_IP`).
+   * `Shared Services`: Target group for `192.168.0.101/32` (`SHARED_IP`).
+   * `Complete LAN`: Target group for your full LAN resource (`192.168.0.0/24`).
 
 > [!NOTE]
-> Remove `owner-devices` from the `pihole` peer if your user account auto-assigns groups. Do not use the built-in `All` group in policies.
+> Remove `Admin` from the `pihole` peer if your user account auto-assigns groups. Do not use the built-in `All` group in policies.
 
-### C. Add Two Network Resources
+### C. Add Three Network Resources
 
 5. Go to **Networks** and click **Add Network** (for example, `Homelab LAN`).
-6. Add the full LAN resource for owner access:
+6. Add the private server IP resource:
+   * Click **Add Resource** and enter `192.168.0.100/32` (`PRIVATE_IP`).
+   * Assign the resource to group `Private Services`.
+   * Select `Raspberry` as the **Routing Peer**.
+7. Add the shared server IP resource:
+   * Click **Add Resource** and enter `192.168.0.101/32` (`SHARED_IP`).
+   * Assign the resource to group `Shared Services`.
+   * Select `Raspberry` as the **Routing Peer**.
+8. Add the full LAN resource:
    * Click **Add Resource** and enter `192.168.0.0/24`.
-   * Assign the resource to group `net-lan-full`.
-   * Select `homelab-routers` (`pihole`) as the **Routing Peer**.
-7. Add the shared service IP resource for friends and family:
-   * Click **Add Resource** and enter `192.168.0.101/32` (your `SHARED_IP`).
-   * Assign the resource to group `net-shared-services`.
-   * Select `homelab-routers` (`pihole`) as the **Routing Peer**.
+   * Assign the resource to group `Complete LAN`.
+   * Select `Raspberry` as the **Routing Peer**.
 
 ### D. Set Up Access Control Policies
 
-8. Go to **Access Control** -> **Policies** and remove or turn off the default `All -> All` policy.
-9. Add a policy for full owner access:
-   * **Source**: `owner-devices`
-   * **Destination**: `homelab-routers`, `net-lan-full`
-   * **Protocol**: `All`
-10. Add a policy for friends and family shared apps:
-    * **Source**: `friends-family`
-    * **Destination**: `net-shared-services`
+9. Go to **Access Control** -> **Policies** and remove or turn off the default `All -> All` policy.
+10. Add a policy for full `Admin` access:
+    * **Source**: `Admin`
+    * **Destination**: `Raspberry`, `Complete LAN`
+    * **Protocol**: `All`
+11. Add a policy for `Friends and Family` shared apps:
+    * **Source**: `Friends and Family`
+    * **Destination**: `Shared Services`
     * **Protocol and Ports**: `TCP` ports `443`, `8096`, `5055`, and `2283`
-11. Add a policy for Pi-hole DNS queries:
-    * **Source**: `owner-devices`, `friends-family`
-    * **Destination**: `homelab-routers`
+12. Add a policy for Pi-hole DNS queries:
+    * **Source**: `Admin`, `Friends and Family`
+    * **Destination**: `Raspberry`
     * **Protocol and Ports**: `UDP` port `53` and `TCP` port `53`
+
+> [!NOTE]
+> `Complete LAN` (`192.168.0.0/24`) already includes `.100` and `.101`, so `Admin` does not need separate `/32` routes. Keep `Private Services` ready for future per-host policies.
 
 ---
 
@@ -161,7 +169,7 @@ Set Pi-hole as the primary DNS nameserver across your NetBird network:
 2. Click **Add Nameserver**.
 3. Enter the **NetBird `100.x.y.z` IP** of your Raspberry Pi (port `53`).
 4. Leave **Match Domains** blank so all DNS queries use Pi-hole.
-5. Assign the nameserver to `owner-devices` and `friends-family`, then click **Save**.
+5. Assign the nameserver to `Admin` and `Friends and Family`, then click **Save**.
 6. Install and turn on NetBird on your phone or laptop while on mobile data (5G), then do these checks:
    * Open `https://canyoublockit.com/testing/` to make sure ads do not load.
    * Check network speed to make sure only DNS queries go through the Pi while web traffic uses full cellular speed.
@@ -198,7 +206,6 @@ Point shared domains to `SHARED_IP` (`192.168.0.101`) and private domains to `PR
 3. Add private service records that point to `PRIVATE_IP` (`192.168.0.100`):
    * `portainer.madcow.fyi` -> `192.168.0.100`
    * `npm.madcow.fyi` -> `192.168.0.100`
-   * `paperless.madcow.fyi` -> `192.168.0.100`
    * `sonarr.madcow.fyi` -> `192.168.0.100`
    * `radarr.madcow.fyi` -> `192.168.0.100`
 4. Add each proxy host in the correct Nginx Proxy Manager instance (`:81` for Private, `:8181` for Shared).
