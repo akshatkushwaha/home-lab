@@ -102,7 +102,7 @@ services:
     image: ghcr.io/immich-app/immich-machine-learning:release
     container_name: immich-machine-learning
     volumes:
-      - ${MEDIA_DIR:-~/media}/cache/immich-ml:/cache
+      - ${CACHE_DIR:-~/cache}/immich-ml:/cache
     networks:
       - shared_net
     restart: unless-stopped
@@ -130,42 +130,8 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------
-  # DOCUMENT MANAGEMENT AND UTILITIES
+  # UTILITIES (PDF)
   # --------------------------------------------------
-  paperless-ngx:
-    image: ghcr.io/paperless-ngx/paperless-ngx:latest
-    container_name: paperless-ngx
-    environment:
-      <<: *common-env
-      USERMAP_UID: ${PUID:-1000}
-      USERMAP_GID: ${PGID:-1000}
-      PAPERLESS_REDIS: redis://paperless-redis:6379
-      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:?Set PAPERLESS_SECRET_KEY in .env}
-      PAPERLESS_URL: ${PAPERLESS_URL:-http://localhost:8777}
-      PAPERLESS_CSRF_TRUSTED_ORIGINS: ${PAPERLESS_CSRF_TRUSTED_ORIGINS:-http://localhost:8777}
-      PAPERLESS_ALLOWED_HOSTS: ${PAPERLESS_ALLOWED_HOSTS:-localhost,127.0.0.1}
-      PAPERLESS_TIME_ZONE: ${TZ:-UTC}
-      PAPERLESS_OCR_LANGUAGE: eng
-    volumes:
-      - ./configs/paperless/data:/usr/src/paperless/data
-      - ./configs/paperless/media:/usr/src/paperless/media
-      - ./configs/paperless/export:/usr/src/paperless/export
-      - ./configs/paperless/consume:/usr/src/paperless/consume
-    ports:
-      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:8777:8000"
-    depends_on:
-      - paperless-redis
-    networks:
-      - private_net
-    restart: unless-stopped
-
-  paperless-redis:
-    image: redis:7-alpine
-    container_name: paperless-redis
-    networks:
-      - private_net
-    restart: unless-stopped
-
   stirling-pdf:
     image: stirlingtools/stirling-pdf:latest
     container_name: stirling-pdf
@@ -203,49 +169,18 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------
-  # MONITORING AND HOMEPAGE
-  # --------------------------------------------------
-  uptime-kuma:
-    image: louislam/uptime-kuma:latest
-    container_name: uptime-kuma
-    volumes:
-      - ./configs/uptime-kuma/data:/app/data
-    ports:
-      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:3001:3001"
-    networks:
-      - private_net
-    restart: unless-stopped
-
-  homepage:
-    image: ghcr.io/gethomepage/homepage:latest
-    container_name: homepage
-    environment:
-      - TZ=${TZ:-UTC}
-      - HOMEPAGE_VAR_SERVER_IP=${PRIVATE_IP:-127.0.0.1}
-      - HOMEPAGE_VAR_SHARED_IP=${SHARED_IP:-127.0.0.1}
-      - HOMEPAGE_VAR_VAULT_URL=${VAULTWARDEN_DOMAIN:-http://localhost}
-    volumes:
-      - ./configs/homepage/config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    ports:
-      - "${PRIVATE_IP:?Set PRIVATE_IP in .env}:3000:3000"
-    networks:
-      - private_net
-    restart: unless-stopped
-
-  # --------------------------------------------------
   # MEDIA STREAMING AND AUTOMATION (JELLYFIN AND *ARR STACK)
   # --------------------------------------------------
   # ZFS Snapshot and Storage Architecture:
   # 1. Configs and Databases:
-  #    ./configs/<service> maps to the ZFS config dataset (tank/appdata).
+  #    ./configs/<service> maps to the SSD config dataset (fast/appdata).
   #    Snapshots stay small, run fast, and replicate offsite.
-  # 2. Bulk Media and Downloads:
-  #    ${MEDIA_DIR:-~/media} maps to a separate ZFS media dataset (tank/media).
+  # 2. Caches (SSD):
+  #    ${CACHE_DIR:-~/cache}/... maps to fast/cache on SSD without snapshots.
+  #    This keeps transcode chunks and ML models out of fast/appdata backups.
+  # 3. Bulk Media and Downloads (HDD):
+  #    ${MEDIA_DIR:-~/media} maps to the unmirrored HDD dataset (tank/media).
   #    Routine config backup snapshots do not include this dataset.
-  # 3. Jellyfin and Immich Cache Isolation:
-  #    ${MEDIA_DIR:-~/media}/cache/... keeps large transcode chunks and ML models
-  #    out of ./configs so snapshots stay small.
   # 4. TRaSH Guides Hardlink Structure:
   #    One shared root (${MEDIA_DIR:-~/media}:/data) across qBittorrent, Sonarr,
   #    and Radarr lets the kernel make instant atomic hardlinks with zero extra space.
@@ -349,7 +284,7 @@ services:
     volumes:
       - ./configs/jellyfin:/config
       - ./configs/jellyfin/custom-cont-init.d:/custom-cont-init.d
-      - ${MEDIA_DIR:-~/media}/cache/jellyfin:/cache
+      - ${CACHE_DIR:-~/cache}/jellyfin:/cache
       - ${MEDIA_DIR:-~/media}/movies:/data/movies:ro
       - ${MEDIA_DIR:-~/media}/tv:/data/tv:ro
     ports:
