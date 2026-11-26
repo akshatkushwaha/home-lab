@@ -170,7 +170,11 @@ Bazarr manages subtitles for movies and TV shows.
 
 1. Go to **Dashboard** -> **Playback** -> **Transcoding**.
 2. Set **Transcode path** to `/cache`.
-   * Jellyfin writes temporary transcode files to `~/media/cache/jellyfin` instead of your ZFS config backup snapshots.
+   * Jellyfin writes temporary transcode files to `~/cache/jellyfin` (`fast/cache`) instead of your `fast/appdata` backup snapshots.
+3. Turn on **Throttle Transcodes** so Jellyfin pauses ahead of playback and keeps cache size small.
+
+> [!NOTE]
+> On hosts with 32 GB or more RAM, you can replace the `/cache` volume with `tmpfs` in `docker-compose.yml`. On 16 GB hosts, keep `/cache` on the `fast/cache` SSD dataset so Immich ML and ZFS ARC keep enough free memory.
 
 #### Set Up Hardware Acceleration (GPU Transcode)
 

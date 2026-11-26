@@ -1,57 +1,66 @@
 # ZFS Snapshot and Backup Guide
 
-This guide explains the storage architecture, automatic snapshot schedule, remote replication, and disaster recovery procedures for this homelab.
+This guide explains the two-pool ZFS storage architecture, automatic snapshot schedule, remote replication, and disaster recovery procedures for this homelab.
 
 ---
 
 ## Storage Architecture
 
-The storage model separates critical application state, personal photos, personal documents, and disposable bulk media into four datasets:
+The storage model puts critical application state, personal photos, documents, and disposable caches on a mirrored SSD pool (`fast`). Bulk video files reside on a separate single HDD pool (`tank`) with no mirror:
 
 ```
-ZFS Pool: tank
+ZFS SSD Mirror Pool: fast (2x SSD mirror)
 │
-├── tank/appdata (Mounted to ./configs inside ~/home-lab)
-│   ├── Size: ~5 GB - 20 GB
+├── fast/appdata (Mounted to ./configs inside ~/home-lab)
+│   ├── Size: ~10 GB - 40 GB
 │   ├── Contents: SQLite databases, Immich Postgres data, container configs, SSL certs
 │   ├── Tuning: compression=lz4, atime=off, xattr=sa
 │   ├── Snapshot Policy: Hourly (keep 48), Daily (keep 30), Monthly (keep 12)
 │   └── Backup: Replicated offsite via zfs send / Syncoid
 │
-├── tank/photos (Mounted to ~/photos)
-│   ├── Size: High priority, scalable (hundreds of GBs to TBs)
-│   ├── Contents: Immich photo and video libraries (irreplaceable family memories)
+├── fast/photos (Mounted to ~/photos)
+│   ├── Size: ~140 GB+ (Immich photo and video libraries)
+│   ├── Contents: Irreplaceable family photos and videos
 │   ├── Tuning: compression=lz4, atime=off
 │   ├── Snapshot Policy: Daily (keep 30), Monthly (keep 12), Yearly (keep 2)
 │   └── Backup: Replicated offsite via Syncoid (CRITICAL BACKUP)
 │
-├── tank/storage (Mounted to ~/storage)
-│   ├── Size: Scalable based on personal documents
-│   ├── Contents: Native SMB Share & Syncthing Offline Drive (Google Drive replacement)
+├── fast/storage (Mounted to ~/storage)
+│   ├── Size: ~1 GB+ (personal cloud documents)
+│   ├── Contents: Native SMB Share & Syncthing Offline Drive
 │   ├── Tuning: compression=lz4, atime=off
 │   ├── Snapshot Policy: Daily (keep 30), Monthly (keep 12), Yearly (keep 2)
 │   └── Backup: Replicated offsite via Syncoid (CRITICAL BACKUP)
+│
+└── fast/cache (Mounted to ~/cache)
+    ├── Size: ~10 GB - 30 GB
+    ├── Subdirectories:
+    │   ├── jellyfin/  (Transcode chunks)
+    │   └── immich-ml/ (Downloaded machine learning model weights)
+    ├── Tuning: compression=lz4, atime=off
+    └── Backup: EXCLUDED from snapshots and remote replication (disposable cache)
+
+ZFS HDD Pool: tank (1x HDD, unmirrored)
 │
 └── tank/media (Mounted to ~/media)
     ├── Size: Multiple Terabytes
     ├── Subdirectories:
     │   ├── downloads/ (Torrent download staging)
     │   ├── movies/    (Curated movie files)
-    │   ├── tv/        (Curated TV show files)
-    │   └── cache/     (Jellyfin transcoding chunks & Immich ML model cache)
+    │   └── tv/        (Curated TV show files)
     ├── Tuning: compression=lz4, recordsize=1M
-    ├── Snapshot Policy: Optional weekly local snapshot (no long retention)
-    └── Backup: EXCLUDED from remote replication (disposable & re-downloadable)
+    ├── Snapshot Policy: None (or optional short local retention)
+    └── Backup: EXCLUDED from remote replication (Sonarr and Radarr DBs on fast/appdata automate recovery)
 ```
 
 ---
 
-## Step 1: Make the ZFS Pool and Datasets
+## Step 1: Make the ZFS Pools and Datasets
 
 > [!WARNING]
 > Clone the `~/home-lab` git repository before you make the dataset mountpoints. If the mountpoint directories exist first, `git clone` fails.
 
-1. Run these commands on the Ubuntu ZFS host to set up the pool, datasets, and folders:
+1. Run these commands on the Ubuntu host to set up both pools, the ARC cap, datasets, and folders:
 
 ```bash
 # 1. Install ZFS utilities if not installed
@@ -60,32 +69,40 @@ sudo apt update && sudo apt install -y zfsutils-linux
 # 2. List physical drives by ID (avoid /dev/sdX)
 ls -l /dev/disk/by-id/
 
-# 3. Make the ZFS pool named 'tank' (mirrored setup example)
-sudo zpool create -o ashift=12 -O compression=lz4 tank mirror \
-    /dev/disk/by-id/<disk-1-id> \
-    /dev/disk/by-id/<disk-2-id>
+# 3. Make the mirrored SSD pool named 'fast'
+sudo zpool create -o ashift=12 -O compression=lz4 fast mirror \
+    /dev/disk/by-id/<ssd-1-id> \
+    /dev/disk/by-id/<ssd-2-id>
 
-# 4. Clone this repository into your home directory
+# 4. Make the single-HDD pool named 'tank' for bulk media
+sudo zpool create -o ashift=12 -O compression=lz4 tank /dev/disk/by-id/<hdd-1-id>
+
+# 5. Cap ZFS ARC at 4 GB on a 16 GB RAM host so Immich ML keeps free memory
+echo "options zfs zfs_arc_max=4294967296" | sudo tee /etc/modprobe.d/zfs.conf
+sudo update-initramfs -u
+
+# 6. Clone this repository into your home directory
 git clone <your-repo-url> ~/home-lab
 
-# 5. Make the appdata dataset for container configs and databases
-sudo zfs create -o compression=lz4 -o atime=off -o xattr=sa -o mountpoint=/home/$USER/home-lab/configs tank/appdata
+# 7. Make the SSD datasets (appdata, photos, storage, and cache)
+sudo zfs create -o compression=lz4 -o atime=off -o xattr=sa -o mountpoint=/home/$USER/home-lab/configs fast/appdata
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/photos fast/photos
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/storage fast/storage
+sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/cache fast/cache
 
-# 6. Make the photos dataset for Immich uploads
-sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/photos tank/photos
-
-# 7. Make the personal storage dataset for SMB and Syncthing
-sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/storage tank/storage
-
-# 8. Make the bulk media dataset (1M recordsize for video streams)
+# 8. Make the bulk media dataset on HDD (1M recordsize for video streams)
 sudo zfs create -o compression=lz4 -o recordsize=1M -o mountpoint=/home/$USER/media tank/media
 
-# 9. Make subdirectories for media and transcode caches
-mkdir -p /home/$USER/media/{downloads,movies,tv,cache/jellyfin,cache/immich-ml}
+# 9. Make subdirectories for cache and media
+mkdir -p /home/$USER/cache/{jellyfin,immich-ml}
+mkdir -p /home/$USER/media/{downloads,movies,tv}
 
 # 10. Give ownership of all datasets to your user
-sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage /home/$USER/media
+sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage /home/$USER/cache /home/$USER/media
 ```
+
+> [!NOTE]
+> Keep `fast` below 80% used capacity so ZFS copy-on-write stays fast. Also keep `downloads`, `movies`, and `tv` inside `tank/media` so atomic hardlinks work.
 
 ---
 
@@ -107,20 +124,24 @@ sudo apt install -y sanoid
 2. Put this configuration into `/etc/sanoid/sanoid.conf`:
 
 ```ini
-[tank/appdata]
+[fast/appdata]
     use_template = production
     recursive = yes
 
-[tank/photos]
+[fast/photos]
     use_template = personal_files
     recursive = yes
 
-[tank/storage]
+[fast/storage]
     use_template = personal_files
+    recursive = yes
+
+[fast/cache]
+    use_template = ignore
     recursive = yes
 
 [tank/media]
-    use_template = media_bulk
+    use_template = ignore
     recursive = yes
 
 #############################
@@ -145,14 +166,9 @@ sudo apt install -y sanoid
     autosnap = yes
     autoprune = yes
 
-[template_media_bulk]
-    frequently = 0
-    hourly = 0
-    daily = 7
-    monthly = 1
-    yearly = 0
-    autosnap = yes
-    autoprune = yes
+[template_ignore]
+    autosnap = no
+    autoprune = no
 ```
 
 3. Start the systemd timer for Sanoid:
@@ -164,9 +180,9 @@ sudo systemctl enable --now sanoid.timer
 4. Run these commands to check that Sanoid made snapshots:
 
 ```bash
-sudo zfs list -t snapshot -r tank/appdata
-sudo zfs list -t snapshot -r tank/photos
-sudo zfs list -t snapshot -r tank/storage
+sudo zfs list -t snapshot -r fast/appdata
+sudo zfs list -t snapshot -r fast/photos
+sudo zfs list -t snapshot -r fast/storage
 ```
 
 ---
@@ -174,6 +190,9 @@ sudo zfs list -t snapshot -r tank/storage
 ## Step 3: Set Up Remote Offsite Replication (Syncoid)
 
 Syncoid sends ZFS snapshots over SSH to a remote machine (a NAS, a second PC, or a cloud VPS) with `zfs send | zfs recv`.
+
+> [!NOTE]
+> A ZFS mirror protects against one drive failure, not theft, fire, or accidental removal. If you do not run a remote ZFS host, back up `~/home-lab/configs`, `~/photos`, and `~/storage` with an encrypted cloud tool such as `restic` or `rclone`.
 
 ### Set Up SSH Access
 
@@ -197,17 +216,17 @@ sanoid --take-snapshots
 
 # 2. Replicate appdata (configs and databases)
 syncoid --no-privilege-elevation \
-        -r tank/appdata \
+        -r fast/appdata \
         backupuser@remote-nas.lan:backup-tank/homelab-configs
 
 # 3. Replicate photos (Immich library)
 syncoid --no-privilege-elevation \
-        -r tank/photos \
+        -r fast/photos \
         backupuser@remote-nas.lan:backup-tank/homelab-photos
 
 # 4. Replicate personal storage (SMB files and Syncthing documents)
 syncoid --no-privilege-elevation \
-        -r tank/storage \
+        -r fast/storage \
         backupuser@remote-nas.lan:backup-tank/homelab-storage
 
 echo "Homelab backup completed on $(date)"
@@ -256,7 +275,25 @@ docker compose start radarr
 
 ---
 
-### Scenario B: Full Disaster Recovery (Total Hardware Loss)
+### Scenario B: Media HDD Failure (`tank/media`)
+
+Use this procedure when the single unmirrored media HDD fails:
+
+1. Replace the failed HDD and make a new `tank` pool and `tank/media` dataset:
+
+   ```bash
+   sudo zpool create -f -o ashift=12 -O compression=lz4 tank /dev/disk/by-id/<new-hdd-id>
+   sudo zfs create -o compression=lz4 -o recordsize=1M -o mountpoint=/home/$USER/media tank/media
+   mkdir -p /home/$USER/media/{downloads,movies,tv}
+   sudo chown -R $USER:$USER /home/$USER/media
+   ```
+
+2. Restart the media containers (`docker compose up -d qbittorrent sonarr radarr bazarr jellyfin`).
+3. In **Radarr** and **Sonarr**, open **Wanted** -> **Missing** and search so both apps download your library again.
+
+---
+
+### Scenario C: Full Disaster Recovery (Total Hardware Loss)
 
 Run these steps on a replacement server:
 
@@ -274,7 +311,7 @@ Run these steps on a replacement server:
    git clone <repo-url> ~/home-lab
    ```
 
-3. Restore all critical ZFS datasets from your remote backup server:
+3. Restore all critical ZFS datasets from your remote backup server into `fast`:
 
    ```bash
    # Get the latest snapshot names
@@ -282,19 +319,22 @@ Run these steps on a replacement server:
    LATEST_PHOTOS=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-photos | tail -n 1")
    LATEST_STORAGE=$(ssh backupuser@remote-nas.lan "zfs list -t snapshot -o name -s creation -r backup-tank/homelab-storage | tail -n 1")
 
-   # Receive snapshots into the local pool
-   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_CONFIGS}" | sudo zfs receive tank/appdata
-   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_PHOTOS}" | sudo zfs receive tank/photos
-   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_STORAGE}" | sudo zfs receive tank/storage
+   # Receive snapshots into the local SSD pool
+   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_CONFIGS}" | sudo zfs receive fast/appdata
+   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_PHOTOS}" | sudo zfs receive fast/photos
+   ssh backupuser@remote-nas.lan "zfs send -R ${LATEST_STORAGE}" | sudo zfs receive fast/storage
    ```
 
-4. Set the dataset mountpoints and user ownership:
+4. Make the disposable `fast/cache` and `tank/media` datasets, then set mountpoints and ownership:
 
    ```bash
-   sudo zfs set mountpoint=/home/$USER/home-lab/configs tank/appdata
-   sudo zfs set mountpoint=/home/$USER/photos tank/photos
-   sudo zfs set mountpoint=/home/$USER/storage tank/storage
-   sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage
+   sudo zfs set mountpoint=/home/$USER/home-lab/configs fast/appdata
+   sudo zfs set mountpoint=/home/$USER/photos fast/photos
+   sudo zfs set mountpoint=/home/$USER/storage fast/storage
+   sudo zfs create -o compression=lz4 -o atime=off -o mountpoint=/home/$USER/cache fast/cache
+   sudo zfs create -o compression=lz4 -o recordsize=1M -o mountpoint=/home/$USER/media tank/media
+   mkdir -p /home/$USER/cache/{jellyfin,immich-ml} /home/$USER/media/{downloads,movies,tv}
+   sudo chown -R $USER:$USER /home/$USER/home-lab/configs /home/$USER/photos /home/$USER/storage /home/$USER/cache /home/$USER/media
    ```
 
 5. Restore or recreate your `.env` file, then start the stack:
